@@ -5,9 +5,10 @@
   "type": "module",
   "license": "MIT",
   "author": "Iktahana",
-  "repository": { "type": "git", "url": "https://github.com/Iktahana/milkdown-plugin-mdi.git" },
-  "bugs": { "url": "https://github.com/Iktahana/milkdown-plugin-mdi/issues" },
+  "repository": { "type": "git", "url": "https://github.com/illusions-lab/milkdown-plugin-mdi.git" },
+  "bugs": { "url": "https://github.com/illusions-lab/milkdown-plugin-mdi/issues" },
   "peerDependencies": { "@milkdown/core": ">=7.5.1", "@milkdown/prose": ">=7.5.1", "@milkdown/utils": ">=7.5.1" },
-  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit", "docs:dev": "vitepress dev docs", "docs:build": "vitepress build docs", "docs:preview": "vitepress preview docs" },
+  "devDependencies": { "vitepress": "^1.6.4" },
   "files": ["dist", "README.md", "LICENSE"]
 }

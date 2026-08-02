@@ -2,7 +2,7 @@
 
 MDI syntax support for [Milkdown](https://milkdown.dev/), built for Japanese novel and long-form writing workflows.
 
-> Early development: the public API is being stabilized. See the [roadmap](https://github.com/Iktahana/milkdown-plugin-mdi/issues) before relying on an unreleased feature.
+> Early development: the public API is being stabilized. See the [roadmap](https://github.com/illusions-lab/milkdown-plugin-mdi/issues) before relying on an unreleased feature.
 
 ## Goals
 
