@@ -1,0 +1,22 @@
+name: Bug report
+description: Report incorrect parsing, serialization, or editor behavior
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: MDI input
+      description: Include the smallest reproducible MDI snippet.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Package version

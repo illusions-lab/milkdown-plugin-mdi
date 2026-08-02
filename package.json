@@ -1,0 +1,13 @@
+{
+  "name": "@illusions-lab/milkdown-plugin-mdi",
+  "version": "0.1.0",
+  "description": "MDI syntax support for Milkdown",
+  "type": "module",
+  "license": "MIT",
+  "author": "Iktahana",
+  "repository": { "type": "git", "url": "https://github.com/Iktahana/milkdown-plugin-mdi.git" },
+  "bugs": { "url": "https://github.com/Iktahana/milkdown-plugin-mdi/issues" },
+  "peerDependencies": { "@milkdown/core": ">=7.5.1", "@milkdown/prose": ">=7.5.1", "@milkdown/utils": ">=7.5.1" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "files": ["dist", "README.md", "LICENSE"]
+}
