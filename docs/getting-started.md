@@ -1,4 +1,4 @@
-# Getting started
+# Getting Started
 
 ## Installation
 
@@ -8,15 +8,19 @@ npm install @illusions-lab/milkdown-plugin-mdi
 
 ## Register the plugin
 
-```ts
-import { Editor } from "@milkdown/core";
-import { commonmark } from "@milkdown/preset-commonmark";
-import { mdi } from "@illusions-lab/milkdown-plugin-mdi";
+MDI requires Milkdown's CommonMark preset. Import the package stylesheet, then await `initializeMdi()` in the browser before creating an editor.
 
-Editor.make()
-  .use(commonmark)
-  .use(mdi({ enabled: true }))
-  .create();
+```ts
+import { Editor } from '@milkdown/core'
+import { commonmark } from '@milkdown/preset-commonmark'
+import { initializeMdi, mdi } from '@illusions-lab/milkdown-plugin-mdi'
+import '@illusions-lab/milkdown-plugin-mdi/style.css'
+
+await initializeMdi()
+
+const editor = await Editor.make().use(commonmark).use(mdi()).create()
 ```
 
-Keep `enabled` as an application-level decision. The plugin should not inspect file extensions itself.
+`initializeMdi()` initializes MDI's Rust-backed JavaScript binding and is safe to call more than once. For its runtime background, see the official [JavaScript binding documentation](https://mdi.illusions.app/bindings/javascript/).
+
+Enable `mdi()` when your application chooses to support inline MDI. This package does not decide from a file extension, enable vertical writing, or implement an application's document-mode policy.

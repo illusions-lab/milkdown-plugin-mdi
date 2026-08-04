@@ -1,18 +1,19 @@
 # Milkdown MDI
 
-MDI syntax support for Milkdown, designed for Japanese novel and long-form writing workflows.
+MDI editing and serialization integration for [Milkdown](https://milkdown.dev/), for Japanese novel and long-form writing workflows.
 
-## What this package does
+## Responsibilities
 
-- Parses MDI constructs into editable ProseMirror nodes.
-- Preserves MDI syntax through Milkdown serialization.
-- Provides clipboard conversion and round-trip guarantees.
-- Keeps document semantics independent from writing direction.
+This package parses supported MDI into editable ProseMirror content, serializes it through Milkdown, and provides canonical MDI persistence. It does not define MDI itself.
 
-## What it does not do
+The MDI specification, grammar, limits, escaping rules, and examples are maintained in the official documentation:
 
-This package does not control vertical layout, scrolling, or application file-type detection. Pair it with [`@illusions-lab/milkdown-plugin-vertical-writing`](https://github.com/illusions-lab/milkdown-plugin-vertical-writing) when you need vertical presentation.
+- [What is MDI?](https://mdi.illusions.app/learn/what-is-mdi/)
+- [Syntax reference](https://mdi.illusions.app/syntax/reference/)
+- [Syntax showcase](https://mdi.illusions.app/syntax/showcase/)
 
-## Status
+## Scope
 
-The package is under active development. Check the [open TODO](https://github.com/illusions-lab/milkdown-plugin-mdi/issues/1) for the implementation roadmap.
+Supported inline features are represented as editable marks, atomic nodes, or inline leaves. YAML front matter is retained as document metadata rather than shown in the editable body. See [Syntax Support](/syntax) for the integration matrix.
+
+Vertical layout, scrolling, file-extension detection, and application-specific enablement are outside this package. Use [`@illusions-lab/milkdown-plugin-vertical-writing`](https://github.com/illusions-lab/milkdown-plugin-vertical-writing) when your application needs vertical presentation.

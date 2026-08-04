@@ -2,13 +2,92 @@
   "name": "@illusions-lab/milkdown-plugin-mdi",
   "version": "0.1.0",
   "description": "MDI syntax support for Milkdown",
+  "keywords": [
+    "milkdown",
+    "mdi",
+    "markdown",
+    "prosemirror",
+    "japanese"
+  ],
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
   "license": "MIT",
   "author": "Iktahana",
-  "repository": { "type": "git", "url": "https://github.com/illusions-lab/milkdown-plugin-mdi.git" },
-  "bugs": { "url": "https://github.com/illusions-lab/milkdown-plugin-mdi/issues" },
-  "peerDependencies": { "@milkdown/core": ">=7.5.1", "@milkdown/prose": ">=7.5.1", "@milkdown/utils": ">=7.5.1" },
-  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit", "docs:dev": "vitepress dev docs", "docs:build": "vitepress build docs", "docs:preview": "vitepress preview docs" },
-  "devDependencies": { "vitepress": "^1.6.4" },
-  "files": ["dist", "README.md", "LICENSE"]
+  "homepage": "https://illusions-lab.github.io/milkdown-plugin-mdi/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/illusions-lab/milkdown-plugin-mdi.git"
+  },
+  "bugs": {
+    "url": "https://github.com/illusions-lab/milkdown-plugin-mdi/issues"
+  },
+  "peerDependencies": {
+    "@milkdown/core": ">=7.5.8",
+    "@milkdown/ctx": ">=7.5.8",
+    "@milkdown/prose": ">=7.5.8",
+    "@milkdown/utils": ">=7.5.8"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp src/style.css dist/style.css",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:performance": "RUN_PERFORMANCE_TESTS=1 vitest run test/large-document.perf.test.ts --testTimeout=360000 --hookTimeout=360000",
+    "test:browser": "playwright test --project=chromium",
+    "test:browser:all": "playwright test --project=chromium --project=firefox --project=webkit",
+    "test:browser:performance": "RUN_BROWSER_PERFORMANCE_TESTS=1 playwright test browser/large-document.perf.spec.ts --project=chromium --project=firefox --project=webkit --workers=1",
+    "test:tarball": "node scripts/tarball-contract.mjs",
+    "test:consumer": "node scripts/package-consumer-smoke.mjs",
+    "test:release": "npm run typecheck && npm run test:coverage && npm run build && npm run test:tarball && npm run debug:build && npm run test:browser && npm run test:consumer",
+    "release:check": "npm run test:release && npm run test:browser:all && PLAYWRIGHT_BROWSERS=all npm run test:consumer && npm run docs:build && npm publish --dry-run --ignore-scripts",
+    "prepack": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite --config debug/vite.config.ts",
+    "debug:dev": "vite --config debug/vite.config.ts",
+    "debug:build": "vite build --config debug/vite.config.ts",
+    "debug:preview": "vite preview --config debug/vite.config.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "devDependencies": {
+    "@illusions-lab/milkdown-plugin-vertical-writing": "^1.0.1",
+    "@milkdown/core": "^7.21.3",
+    "@milkdown/ctx": "7.21.3",
+    "@milkdown/preset-commonmark": "^7.21.3",
+    "@milkdown/prose": "7.21.3",
+    "@milkdown/theme-nord": "^7.21.3",
+    "@milkdown/utils": "7.21.3",
+    "@playwright/test": "^1.54.2",
+    "@vitest/coverage-v8": "^3.2.7",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "vitepress": "^1.6.4",
+    "vitest": "^3.2.7"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": [
+    "./dist/style.css"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@illusions-lab/mdi": "^2.0.19",
+    "@illusions-lab/mdi-remark": "^2.0.32",
+    "mdast-util-mdi": "^2.0.16"
+  }
 }
