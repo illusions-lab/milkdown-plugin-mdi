@@ -1,0 +1,63 @@
+---
+mdi: "2.0"
+title: Inline MDI Debug
+author: illusions-lab
+lang: ja
+writing-mode: horizontal
+page-progression: ltr
+debug-fixture: inline-edge-cases
+---
+
+# Inline MDI
+
+Markdown remains editable: **strong**, *emphasis*, ~~取り消し線~~, `code`, and [a link](https://mdi.illusions.app/).
+
+## Supported inline syntax
+
+Group ruby: {東京|とうきょう}。Split ruby: {雪女|ゆき.おんな}。Unicode: {珈琲|コーヒー}。
+
+Tate-chu-yoko: 第^12^話、^ABC^。
+
+Boten: [[em:それ]] and [[em:●:決して]]。Nested ruby: [[em:{東京|とうきょう}]]。
+
+No-break: [[no-break:東京都新宿区]]。Nested TCY: [[no-break:第^12^話]]。
+
+Warichu: 大安[[warichu:六曜の一つで吉日とされる]]だった。
+
+Kerning: [[kern:-0.1em:確実]] and [[kern:+0.3em:沈黙]]。
+
+Explicit break: 春は曙。[[br]]やうやう白くなりゆく。
+
+## Nested combinations
+
+Boten around split ruby: [[em:●:{雪女|ゆき.おんな}]]。
+
+No-break around mixed text: [[no-break:第^12^話の{東京|とうきょう}公演]]。
+
+Kern and boten: [[kern:+0.2em:[[em:重要]]]]。
+
+Warichu with TCY and ruby: [[warichu:^12^月、{東京|とうきょう}にて]]。
+
+## Edge cases and literal fallback
+
+Combining characters and emoji: {é|イー}、{👩‍💻|エンジニア}、[[em:😀]]。
+
+Escaped delimiters stay literal: \{brace\}、\^caret\^、\[bracket\]、\|pipe\|、\《title\》。
+
+Unsupported TCY content stays literal: ^too long^、^日本語^、^1234567^、(^_^)。
+
+Invalid kern amounts stay literal: [[kern:abc:text]]、[[kern:1px:text]]、[[kern:+.2em:text]]。
+
+Split ruby with a mismatched reading count falls back to group ruby: {東京|.きょう}。
+
+A multi-character boten marker is treated as default-mark content: [[em:ab:cd]]。
+
+Plain braces without a separator stay literal: {これはリテラル}。
+
+Unclosed ruby stays literal: {東京|とうきょう
+
+Unclosed TCY stays literal: ^12
+
+Unclosed bracket macro stays literal: [[em:未完
+
+Adjacent constructs: {東|ひがし}{京|きょう}^12^[[em:続く]][[br]]改行後。

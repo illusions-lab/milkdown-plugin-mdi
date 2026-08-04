@@ -1,24 +1,29 @@
-import { defineConfig } from "vitepress";
+import { defineConfig } from 'vitepress'
+
+const github = 'https://github.com/illusions-lab/milkdown-plugin-mdi'
 
 export default defineConfig({
-  lang: "en-US",
-  title: "Milkdown MDI",
-  description: "MDI syntax support for Milkdown",
-  base: "/milkdown-plugin-mdi/",
-  cleanUrls: true,
-  themeConfig: {
-    nav: [
-      { text: "Guide", link: "/" },
-      { text: "GitHub", link: "https://github.com/Iktahana/milkdown-plugin-mdi" },
-    ],
-    sidebar: [
-      { text: "Introduction", link: "/" },
-      { text: "Getting Started", link: "/getting-started" },
-      { text: "Syntax", link: "/syntax" },
-      { text: "API", link: "/api" },
-      { text: "Contributing", link: "/contributing" },
-    ],
-    socialLinks: [{ icon: "github", link: "https://github.com/Iktahana/milkdown-plugin-mdi" }],
-    footer: { message: "Released under the MIT License.", copyright: "Copyright © 2026 Iktahana" },
+  title: 'Milkdown MDI', description: 'MDI integration for Milkdown', base: '/milkdown-plugin-mdi/', cleanUrls: true,
+  locales: {
+    root: { label: 'English', lang: 'en-US', themeConfig: {
+      nav: [{ text: 'Guide', link: '/' }, { text: 'GitHub', link: github }],
+      sidebar: [
+        { text: 'Introduction', link: '/' }, { text: 'Getting Started', link: '/getting-started' },
+        { text: 'Integration', link: '/integration' }, { text: 'Syntax Support', link: '/syntax' },
+        { text: 'API', link: '/api' }, { text: 'Contributing', link: '/contributing' },
+      ],
+    } },
+    ja: { label: '日本語', lang: 'ja-JP', link: '/ja/', themeConfig: {
+      nav: [{ text: 'ガイド', link: '/ja/' }, { text: 'GitHub', link: github }],
+      sidebar: [
+        { text: 'はじめに', link: '/ja/' }, { text: '導入', link: '/ja/getting-started' },
+        { text: '統合', link: '/ja/integration' }, { text: '構文サポート', link: '/ja/syntax' },
+        { text: 'API', link: '/ja/api' }, { text: 'コントリビュート', link: '/ja/contributing' },
+      ],
+    } },
   },
-});
+  themeConfig: {
+    socialLinks: [{ icon: 'github', link: github }],
+    footer: { message: 'Released under the MIT License.', copyright: 'Copyright © 2026 Iktahana' },
+  },
+})

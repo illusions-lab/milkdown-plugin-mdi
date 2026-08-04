@@ -2,40 +2,91 @@
 
 MDI syntax support for [Milkdown](https://milkdown.dev/), built for Japanese novel and long-form writing workflows.
 
-> Early development: the public API is being stabilized. See the [roadmap](https://github.com/illusions-lab/milkdown-plugin-mdi/issues) before relying on an unreleased feature.
+The first milestone supports document front matter and all inline MDI constructs. Other block syntax and authoring controls are still deferred.
+
+## MDI documentation
+
+MDI's specification and complete syntax live in the official documentation:
+
+- [What is MDI?](https://mdi.illusions.app/learn/what-is-mdi/)
+- [Syntax reference](https://mdi.illusions.app/syntax/reference/)
 
 ## Goals
 
-- Parse MDI constructs into editable ProseMirror nodes.
-- Preserve MDI syntax through Milkdown's Markdown serializer.
-- Support safe clipboard conversion and round-tripping.
+- Parse inline MDI constructs into ProseMirror nodes and marks.
+- Preserve nested inline semantics through Milkdown's Markdown serializer.
+- Produce canonical persistence output through Rust's MDI serializer.
 - Keep document semantics independent from visual writing direction.
 
-## Planned usage
+## Installation
+
+```bash
+npm install @illusions-lab/milkdown-plugin-mdi @milkdown/core @milkdown/ctx @milkdown/prose @milkdown/utils
+```
+
+## Usage
 
 ```ts
-import { mdi } from "@illusions-lab/milkdown-plugin-mdi";
+import { Editor } from '@milkdown/core'
+import { commonmark } from '@milkdown/preset-commonmark'
+import {
+  getMdi,
+  initializeMdi,
+  mdi,
+} from '@illusions-lab/milkdown-plugin-mdi'
+import '@illusions-lab/milkdown-plugin-mdi/style.css'
 
-editor.use(mdi({
-  enabled: true,
-  ruby: true,
-  tcy: true,
-  noBreak: true,
-  kern: true,
-}));
+await initializeMdi()
+
+const editor = await Editor.make()
+  .use(commonmark)
+  .use(mdi())
+  .create()
+
+const canonicalSource = editor.action(getMdi())
 ```
+
+Browser consumers must await `initializeMdi()` before creating the editor. It is idempotent and safe to call more than once.
+
+`getMarkdown()` from `@milkdown/utils` emits valid MDI through the registered remark handlers. Use `getMdi()` when persisting a `.mdi` file: it additionally runs the Markdown through Rust's canonical serializer.
+
+Treat that complete canonical source as the boundary for downstream MDI analysis. Import analysis APIs from `@illusions-lab/mdi` directly; this plugin does not proxy IR, text projection, text blocks, or search APIs.
+
+```ts
+import { getMdiTextBlocks, parse, renderText } from '@illusions-lab/mdi'
+
+const source = editor.action(getMdi())
+const ir = parse(source)
+const text = renderText(source)
+const { blocks } = getMdiTextBlocks(source)
+```
+
+`getMdiTextBlocks()` returns Rust-owned source-order blocks, diagnostics, ruby annotations, and grapheme-precise source maps. A coordinate such as `3:18` is valid only for the exact source revision that produced it. Applications own the revision or hash, persistent paragraph IDs, indexes, ranking, and AI context policy.
 
 ## Scope
 
-This package owns MDI syntax, parsing, serialization, nodes, and clipboard behavior. It does not impose vertical writing or application-specific file-extension logic. Use `@illusions-lab/milkdown-plugin-vertical-writing` for visual writing direction.
+This milestone supports YAML front matter, group and split ruby, tate-chu-yoko, boten, no-break, warichu, kern, explicit breaks, and nesting among them. Front matter is retained as document metadata rather than displayed as editable body content. Ruby is atomic; the other text constructs remain editable marks.
+
+Block syntax, commands, input rules, popovers, paste handling, and custom clipboard serialization are not included yet. The package does not impose vertical writing or application-specific file-extension logic. Use `@illusions-lab/milkdown-plugin-vertical-writing` for visual writing direction.
 
 ## Development
 
 ```bash
 npm install
 npm test
+npm run test:coverage
 npm run typecheck
+npm run test:browser
+npm run test:tarball
+npm run test:consumer
 ```
+
+Run `npm run test:performance` on a dedicated machine to measure end-to-end editor loading for generated one-million- and ten-million-character MDI books. The test logs elapsed time and uses conservative default limits; set `MDI_1M_LOAD_MAX_MS` or `MDI_10M_LOAD_MAX_MS` to apply your own regression budget.
+
+Run `npm run test:browser:performance` to measure the same documents in Chromium, Firefox, and WebKit. It additionally records time to two animation frames after editor creation and time to scroll to the document end. Configure browser load limits with `MDI_BROWSER_1M_LOAD_MAX_MS` and `MDI_BROWSER_10M_LOAD_MAX_MS`.
+
+`test:browser` uses Chromium for quick local feedback. Run `npm run test:browser:all`
+after installing Playwright's three browser engines to exercise Chromium, Firefox, and WebKit.
 
 ## Contributing
 

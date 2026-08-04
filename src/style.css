@@ -1,0 +1,49 @@
+.mdi-ruby {
+  ruby-align: center;
+  ruby-position: over;
+}
+
+.mdi-ruby rt {
+  font-size: 0.5em;
+}
+
+.mdi-tcy {
+  display: inline-block;
+  line-height: 1;
+  text-align: center;
+  text-combine-upright: all;
+}
+
+.mdi-boten {
+  text-emphasis-style: var(--mdi-boten-mark, "﹅");
+  text-emphasis-position: over right;
+}
+
+.mdi-no-break {
+  white-space: nowrap;
+}
+
+.mdi-warichu {
+  font-size: 0.65em;
+  line-height: 1;
+}
+
+.mdi-kern {
+  letter-spacing: var(--mdi-kern, 0em);
+}
+
+.mdi-break {
+  display: inline;
+}
+
+[data-writing-mode="vertical-rl"] .mdi-ruby,
+[data-writing-mode="vertical-lr"] .mdi-ruby,
+[style*="writing-mode: vertical"] .mdi-ruby {
+  ruby-position: over;
+}
+
+[data-writing-mode="vertical-rl"] .mdi-boten,
+[data-writing-mode="vertical-lr"] .mdi-boten,
+[style*="writing-mode: vertical"] .mdi-boten {
+  text-emphasis-position: over right;
+}
