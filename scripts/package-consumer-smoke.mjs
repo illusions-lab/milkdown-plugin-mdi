@@ -110,8 +110,8 @@ try {
     },
     include: ['contract.ts'],
   }, null, 2))
-  // Install the minimum declared peer set in an otherwise clean consumer.
-  installPeers('7.21.3', tarball)
+  // Install both compatibility edges in an otherwise clean consumer.
+  installPeers('7.5.8', tarball)
   execFileSync(process.execPath, ['--input-type=module', '--eval', `
     import { initializeMdi, mdi, getMdi } from '@illusions-lab/milkdown-plugin-mdi'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
@@ -152,6 +152,8 @@ try {
   `)
   writeFileSync(join(work, 'vite.config.js'), "import { defineConfig } from 'vite'; export default defineConfig({ base: '/consumer/' })")
   buildAndAssert('minimum declared Milkdown peers')
+  installPeers('7.21.3', tarball)
+  buildAndAssert('current development Milkdown peers')
   await browserSmoke()
 } finally {
   rmSync(work, { recursive: true, force: true })

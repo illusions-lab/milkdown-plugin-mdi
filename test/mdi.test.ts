@@ -1,14 +1,8 @@
-import { commandsCtx, editorStateCtx, editorViewCtx } from '@milkdown/core'
+import { editorStateCtx, editorViewCtx } from '@milkdown/core'
 import { parse } from '@illusions-lab/mdi'
-import { DOMParser } from '@milkdown/prose/model'
-import { TextSelection } from '@milkdown/prose/state'
 import { getHTML, getMarkdown } from '@milkdown/utils'
 import { describe, expect, it } from 'vitest'
-import {
-  getMdi,
-  insertMdiRubyCommand,
-  toggleMdiTcyCommand,
-} from '../src/index'
+import { getMdi } from '../src/index'
 import { createEditor } from './harness'
 
 const withoutSpans = (value: unknown): unknown => {
@@ -157,8 +151,7 @@ describe('inline MDI parsing and serialization', () => {
     expect(text).toContain('| A | B |')
     expect(text).toContain('[^1]')
     expect(text).toContain('[link][id]')
-    expect(JSON.stringify(editor.action((ctx) => ctx.get(editorStateCtx).doc.toJSON())))
-      .toContain('mdiPagebreak')
+    expect(text).toContain('[[pagebreak]]')
     const serialized = editor.action(getMdi())
     expect(serialized).toContain('title: Fallback')
     expect(serialized).toContain('[^1]: Footnote.')
@@ -166,103 +159,6 @@ describe('inline MDI parsing and serialization', () => {
     expect(parse(serialized).document.frontmatter?.entries).toEqual(
       expect.arrayContaining([{ key: 'title', value: 'Fallback' }]),
     )
-  })
-
-  it.each([
-    ['blank paragraph', '\\', 'mdiBlank'],
-    ['pagebreak', '[[pagebreak]]', 'mdiPagebreak'],
-    ['right pagebreak', '[[pagebreak:right]]', 'mdiPagebreak'],
-    ['left pagebreak', '[[pagebreak:left]]', 'mdiPagebreak'],
-  ])('round-trips semantic %s blocks', async (_label, source, schemaName) => {
-    const editor = await createEditor(source)
-    const json = editor.action((ctx) => ctx.get(editorStateCtx).doc.toJSON())
-    expect(JSON.stringify(json)).toContain(schemaName)
-    editor.action((ctx) => ctx.get(editorStateCtx).doc.check())
-    expect(editor.action(getMdi()).trim()).toBe(source)
-  })
-
-  it.each([
-    ['[[indent:2]]\n本文', { mdiIndent: 2, mdiBottom: null }],
-    ['[[bottom]]\n本文', { mdiIndent: null, mdiBottom: 0 }],
-    ['[[bottom:3]]\n本文', { mdiIndent: null, mdiBottom: 3 }],
-  ])('round-trips paragraph layout attributes: %s', async (source, attrs) => {
-    const editor = await createEditor(source)
-    const json = editor.action((ctx) => ctx.get(editorStateCtx).doc.toJSON())
-    expect(json.content[0]).toMatchObject({ type: 'paragraph', attrs })
-    expect(editor.action(getMdi()).trim()).toBe(source)
-  })
-
-  it('exposes structured Ruby and TCY editor commands', async () => {
-    const editor = await createEditor('12')
-    editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx)
-      view.dispatch(view.state.tr.setSelection(
-        // Positions 1..3 cover the paragraph text.
-        TextSelection.create(view.state.doc, 1, 3),
-      ))
-      expect(ctx.get(commandsCtx).call(toggleMdiTcyCommand.key)).toBe(true)
-      view.dispatch(view.state.tr.setSelection(
-        TextSelection.create(view.state.doc, 3),
-      ))
-      expect(ctx.get(commandsCtx).call(insertMdiRubyCommand.key, {
-        base: '東京',
-        ruby: 'とうきょう',
-      })).toBe(true)
-    })
-    expect(editor.action(getMdi())).toContain('^12^{東京|とうきょう}')
-  })
-
-  it('copies semantic MDI as clean plain text', async () => {
-    const editor = await createEditor([
-      '# {花|はな}と^12^[[br]]改行',
-      '',
-      '\\',
-      '',
-      '- 項目',
-      '',
-      '```mdi',
-      '{literal|value}',
-      '```',
-      '',
-      '![alt](https://example.com/image.png)',
-      '',
-      '次',
-    ].join('\n'))
-    const value = editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx)
-      const serializer = view.someProp('clipboardTextSerializer')
-      if (!serializer) throw new Error('MDI clipboard serializer is not registered')
-      return serializer(view.state.doc.slice(0, view.state.doc.content.size), view)
-    })
-    expect(value).toBe('花（はな）と12\n改行\n\n\n\n項目\n\n{literal|value}\n\n次')
-  })
-
-  it('renders semantic block DOM hooks', async () => {
-    const editor = await createEditor('[[indent:2]]\n本文\n\n[[pagebreak:right]]\n\n\\')
-    const html = editor.action(getHTML())
-    expect(html).toContain('class="mdi-indent"')
-    expect(html).toContain('data-mdi-indent="2"')
-    expect(html).toContain('class="mdi-pagebreak"')
-    expect(html).toContain('data-mdi-variant="right"')
-    expect(html).toContain('class="mdi-blank"')
-
-    editor.action((ctx) => {
-      const state = ctx.get(editorStateCtx)
-      const container = document.createElement('div')
-      container.innerHTML = '<hr data-mdi-pagebreak data-mdi-variant="left">'
-      const parsed = DOMParser.fromSchema(state.schema).parse(container)
-      let parsedVariant: unknown
-      parsed.descendants((node) => {
-        if (node.type.name === 'mdiPagebreak') parsedVariant = node.attrs.variant
-      })
-      expect(parsedVariant).toBe('left')
-
-      expect(() => state.schema.nodeFromJSON({
-          type: 'mdiPagebreak',
-          attrs: { variant: 'center' },
-        }))
-        .toThrow('Invalid MDI pagebreak variant')
-    })
   })
 
   it('keeps front matter out of the visible document and preserves unknown keys', async () => {

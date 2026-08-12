@@ -2,8 +2,7 @@
 
 MDI syntax support for [Milkdown](https://milkdown.dev/), built for Japanese novel and long-form writing workflows.
 
-The plugin supports document front matter, all inline MDI constructs, semantic
-blank/pagebreak blocks, and indent/bottom paragraph layout attributes.
+The first milestone supports document front matter and all inline MDI constructs. Other block syntax and authoring controls are still deferred.
 
 ## MDI documentation
 
@@ -22,7 +21,7 @@ MDI's specification and complete syntax live in the official documentation:
 ## Installation
 
 ```bash
-npm install @illusions-lab/milkdown-plugin-mdi @milkdown/core @milkdown/ctx @milkdown/prose @milkdown/preset-commonmark @milkdown/utils
+npm install @illusions-lab/milkdown-plugin-mdi @milkdown/core @milkdown/ctx @milkdown/prose @milkdown/utils
 ```
 
 ## Usage
@@ -66,17 +65,9 @@ const { blocks } = getMdiTextBlocks(source)
 
 ## Scope
 
-The plugin supports YAML front matter, group and split ruby, tate-chu-yoko,
-boten, no-break, warichu, kern, explicit breaks, blank paragraphs, pagebreaks,
-indent/bottom paragraph layout, and valid nesting. Front matter is retained as
-document metadata rather than displayed as editable body content. Ruby is
-atomic; the other text constructs remain editable marks.
+This milestone supports YAML front matter, group and split ruby, tate-chu-yoko, boten, no-break, warichu, kern, explicit breaks, and nesting among them. Front matter is retained as document metadata rather than displayed as editable body content. Ruby is atomic; the other text constructs remain editable marks.
 
-Structured Ruby insertion and TCY toggling are exposed as Milkdown commands.
-The included plain-text clipboard serializer preserves semantic text without
-re-parsing MDI delimiters. Popovers and application-specific file-extension
-logic remain application responsibilities. Use
-`@illusions-lab/milkdown-plugin-vertical-writing` for visual writing direction.
+Block syntax, commands, input rules, popovers, paste handling, and custom clipboard serialization are not included yet. The package does not impose vertical writing or application-specific file-extension logic. Use `@illusions-lab/milkdown-plugin-vertical-writing` for visual writing direction.
 
 ## Development
 
