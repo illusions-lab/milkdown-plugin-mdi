@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 - 2026-08-12
+
+- Add semantic blank paragraph and pagebreak block schemas.
+- Preserve MDI indent and bottom paragraph attributes through editor round-trips.
+- Add structured Ruby insertion and TCY toggle commands.
+- Add an MDI-aware plain-text clipboard serializer.
+- Update the MDI remark and mdast adapter dependencies for complete MDI 2.0 block support.
+- Require Milkdown 7.21.3 or newer for the paragraph schema extension contract.
+
 ## 0.1.0 - 2026-08-04
 
 First public release.
