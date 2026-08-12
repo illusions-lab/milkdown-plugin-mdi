@@ -1,6 +1,6 @@
 {
   "name": "@illusions-lab/milkdown-plugin-mdi",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MDI syntax support for Milkdown",
   "keywords": [
     "milkdown",
@@ -30,10 +30,11 @@
     "url": "https://github.com/illusions-lab/milkdown-plugin-mdi/issues"
   },
   "peerDependencies": {
-    "@milkdown/core": ">=7.5.8",
-    "@milkdown/ctx": ">=7.5.8",
-    "@milkdown/prose": ">=7.5.8",
-    "@milkdown/utils": ">=7.5.8"
+    "@milkdown/core": ">=7.21.3",
+    "@milkdown/ctx": ">=7.21.3",
+    "@milkdown/prose": ">=7.21.3",
+    "@milkdown/preset-commonmark": ">=7.21.3",
+    "@milkdown/utils": ">=7.21.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && cp src/style.css dist/style.css",
@@ -87,7 +88,7 @@
   },
   "dependencies": {
     "@illusions-lab/mdi": "^2.0.19",
-    "@illusions-lab/mdi-remark": "^2.0.32",
-    "mdast-util-mdi": "^2.0.16"
+    "@illusions-lab/mdi-remark": "^2.0.34",
+    "mdast-util-mdi": "^2.0.21"
   }
 }
