@@ -2,11 +2,7 @@ import { createSlice, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
 import { serializeMdi } from '@illusions-lab/mdi'
 import remarkMdi from '@illusions-lab/mdi-remark'
 import { InitReady, remarkPluginsCtx } from '@milkdown/core'
-import { paragraphSchema } from '@milkdown/preset-commonmark'
-import { toggleMark } from '@milkdown/prose/commands'
-import type { Fragment, Node as ProseNode } from '@milkdown/prose/model'
-import { Plugin, PluginKey } from '@milkdown/prose/state'
-import { getMarkdown, $command, $markSchema, $node, $prose } from '@milkdown/utils'
+import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { mdastToMdiSource } from 'mdast-util-mdi'
 
 export { initializeMdi } from '@illusions-lab/mdi'
@@ -40,14 +36,12 @@ const SUPPORTED_MDAST_TYPES = new Set([
   'list',
   'listItem',
   'mdiBreak',
-  'mdiBlank',
   'mdiEm',
   'mdiKern',
   'mdiNoBreak',
   'mdiRuby',
   'mdiTcy',
   'mdiWarichu',
-  'mdiPagebreak',
   'paragraph',
   'strong',
   'text',
@@ -67,11 +61,13 @@ const serializeFallback = (node: PositionalMdastNode): string => {
 
 const needsLiteralFallback = (node: PositionalMdastNode) => {
   if (!SUPPORTED_MDAST_TYPES.has(node.type)) return true
-  return false
+  if (node.type !== 'paragraph') return false
+  return node.data?.mdiIndent !== undefined || node.data?.mdiBottom !== undefined
 }
 
-// Preserve genuinely unknown mdast extensions as editable literal text instead
-// of allowing one unsupported node to abort parsing of the entire document.
+// Block MDI and other mdast extensions are intentionally outside this
+// milestone. Preserve their Markdown as editable literal text instead of
+// allowing one unsupported node to abort parsing of the entire document.
 const normalizeUnsupportedNodes = (parent: PositionalMdastNode) => {
   if (!parent.children) return
   parent.children = parent.children.map((node) => {
@@ -407,190 +403,6 @@ const mdiBreakSchema = $node('mdiBreak', () => ({
   },
 }))
 
-const mdiBlankSchema = $node('mdiBlank', () => ({
-  group: 'block',
-  atom: true,
-  selectable: true,
-  parseDOM: [{ tag: 'div[data-mdi-blank]' }],
-  toDOM: () => ['div', { class: 'mdi-blank', 'data-mdi-blank': '' }, ['br']],
-  parseMarkdown: {
-    match: (node) => node.type === 'mdiBlank',
-    runner: (state, _node, type) => state.addNode(type),
-  },
-  toMarkdown: {
-    match: (node) => node.type.name === 'mdiBlank',
-    runner: (state) => state.addNode('mdiBlank'),
-  },
-}))
-
-const mdiPagebreakSchema = $node('mdiPagebreak', () => ({
-  group: 'block',
-  atom: true,
-  selectable: true,
-  attrs: {
-    variant: {
-      default: null,
-      validate: (value) => {
-        if (value === null || value === 'right' || value === 'left') return
-        throw new RangeError(`Invalid MDI pagebreak variant: ${String(value)}`)
-      },
-    },
-  },
-  parseDOM: [{
-    tag: 'hr[data-mdi-pagebreak]',
-    priority: 60,
-    getAttrs: (dom) => ({ variant: (dom as HTMLElement).getAttribute('data-mdi-variant') }),
-  }],
-  toDOM: (node) => [
-    'hr',
-    {
-      class: 'mdi-pagebreak',
-      'data-mdi-pagebreak': '',
-      ...(node.attrs.variant ? { 'data-mdi-variant': String(node.attrs.variant) } : {}),
-    },
-  ],
-  parseMarkdown: {
-    match: (node) => node.type === 'mdiPagebreak',
-    runner: (state, node, type) => state.addNode(type, {
-      variant: node.variant === 'right' || node.variant === 'left' ? node.variant : null,
-    }),
-  },
-  toMarkdown: {
-    match: (node) => node.type.name === 'mdiPagebreak',
-    runner: (state, node) => state.addNode('mdiPagebreak', undefined, undefined, {
-      ...(node.attrs.variant ? { variant: String(node.attrs.variant) } : {}),
-    }),
-  },
-}))
-
-const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
-  const schema = previous(ctx)
-  return {
-    ...schema,
-    attrs: {
-      ...schema.attrs,
-      mdiIndent: { default: null },
-      mdiBottom: { default: null },
-    },
-    parseDOM: [
-      {
-        tag: 'p',
-        getAttrs: (dom) => {
-          const element = dom as HTMLElement
-          const indent = element.getAttribute('data-mdi-indent')
-          const bottom = element.getAttribute('data-mdi-bottom')
-          return {
-            mdiIndent: indent === null ? null : Number(indent),
-            mdiBottom: bottom === null ? null : Number(bottom),
-          }
-        },
-      },
-    ],
-    toDOM: (node) => {
-      const attributes: Record<string, string> = {}
-      if (typeof node.attrs.mdiIndent === 'number') {
-        attributes.class = 'mdi-indent'
-        attributes['data-mdi-indent'] = String(node.attrs.mdiIndent)
-        attributes.style = `--mdi-indent: ${String(node.attrs.mdiIndent)}`
-      } else if (typeof node.attrs.mdiBottom === 'number') {
-        attributes.class = 'mdi-bottom'
-        attributes['data-mdi-bottom'] = String(node.attrs.mdiBottom)
-        attributes.style = `--mdi-bottom: ${String(node.attrs.mdiBottom)}`
-      }
-      return ['p', attributes, 0]
-    },
-    parseMarkdown: {
-      match: (node) => node.type === 'paragraph',
-      runner: (state, node, type) => {
-        const data = node.data as Record<string, unknown> | undefined
-        state.openNode(type, {
-          mdiIndent: typeof data?.mdiIndent === 'number' ? data.mdiIndent : null,
-          mdiBottom: typeof data?.mdiBottom === 'number' ? data.mdiBottom : null,
-        })
-        state.next(node.children)
-        state.closeNode()
-      },
-    },
-    toMarkdown: {
-      match: (node) => node.type.name === 'paragraph',
-      runner: (state, node) => {
-        const data: Record<string, number> = {}
-        if (typeof node.attrs.mdiIndent === 'number') data.mdiIndent = node.attrs.mdiIndent
-        else if (typeof node.attrs.mdiBottom === 'number') data.mdiBottom = node.attrs.mdiBottom
-        state.openNode('paragraph', undefined, Object.keys(data).length > 0 ? { data } : undefined)
-        state.next(node.content)
-        state.closeNode()
-      },
-    },
-  }
-})
-
-export interface InsertMdiRubyPayload {
-  base: string
-  ruby: string | string[]
-}
-
-export const insertMdiRubyCommand = $command<InsertMdiRubyPayload, 'InsertMdiRuby'>(
-  'InsertMdiRuby',
-  (ctx) => (payload) => (state, dispatch) => {
-    if (!payload?.base) return false
-    const node = mdiRubySchema.type(ctx).create(payload)
-    if (!dispatch) return true
-    // Ruby is an atomic semantic node. It must not inherit an active text mark
-    // (notably TCY) from the cursor position where it is inserted.
-    dispatch(state.tr.replaceSelectionWith(node, false).scrollIntoView())
-    return true
-  },
-)
-
-export const toggleMdiTcyCommand = $command<unknown, 'ToggleMdiTcy'>(
-  'ToggleMdiTcy',
-  (ctx) => () => toggleMark(mdiTcySchema.type(ctx)),
-)
-
-const rubyPlainText = (node: ProseNode) => {
-  const reading = rubyReading(node.attrs.ruby)
-  const annotation = Array.isArray(reading) ? reading.join('') : reading
-  return `${String(node.attrs.base)}（${annotation}）`
-}
-
-const inlinePlainText = (node: ProseNode): string => {
-  if (node.isText) return node.text ?? ''
-  if (node.type.name === 'mdiRuby') return rubyPlainText(node)
-  if (node.type.name === 'mdiBreak' || node.type.name === 'hardbreak') return '\n'
-  return node.textContent
-}
-
-const clipboardSegments = (fragment: Fragment): string[] => {
-  const segments: string[] = []
-  fragment.forEach((node) => {
-    if (node.type.name === 'code_block') {
-      segments.push(node.textContent)
-      return
-    }
-    if (node.type.name === 'mdiBlank') {
-      segments.push('')
-      return
-    }
-    if (node.type.name === 'mdiPagebreak') return
-    if (node.inlineContent) {
-      let value = ''
-      node.content.forEach((child) => { value += inlinePlainText(child) })
-      if (value) segments.push(value)
-      return
-    }
-    if (node.childCount > 0) segments.push(...clipboardSegments(node.content))
-  })
-  return segments
-}
-
-export const mdiClipboardSerializer = $prose(() => new Plugin({
-  key: new PluginKey('mdiClipboardSerializer'),
-  props: {
-    clipboardTextSerializer: (slice) => clipboardSegments(slice.content).join('\n\n'),
-  },
-}))
-
 const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
   return async () => {
@@ -621,12 +433,6 @@ const mdiPlugins: MilkdownPlugin[] = [
   ...mdiWarichuSchema,
   ...mdiKernSchema,
   mdiBreakSchema,
-  mdiBlankSchema,
-  mdiPagebreakSchema,
-  ...mdiParagraphSchema,
-  insertMdiRubyCommand,
-  toggleMdiTcyCommand,
-  mdiClipboardSerializer,
 ]
 
 export function mdi(): MilkdownPlugin[] {

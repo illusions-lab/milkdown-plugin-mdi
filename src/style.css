@@ -36,23 +36,6 @@
   display: inline;
 }
 
-.mdi-blank {
-  min-height: 1em;
-}
-
-.mdi-pagebreak {
-  break-after: page;
-}
-
-.mdi-indent {
-  margin-block-start: calc(var(--mdi-indent, 0) * 1em);
-}
-
-.mdi-bottom {
-  margin-block-start: auto;
-  transform: translateY(calc(var(--mdi-bottom, 0) * -1em));
-}
-
 [data-writing-mode="vertical-rl"] .mdi-ruby,
 [data-writing-mode="vertical-lr"] .mdi-ruby,
 [style*="writing-mode: vertical"] .mdi-ruby {

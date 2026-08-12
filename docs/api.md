@@ -1,14 +1,7 @@
 # API
 
 ```ts
-import {
-  getMdi,
-  initializeMdi,
-  insertMdiRubyCommand,
-  mdi,
-  mdiClipboardSerializer,
-  toggleMdiTcyCommand,
-} from '@illusions-lab/milkdown-plugin-mdi'
+import { getMdi, initializeMdi, mdi } from '@illusions-lab/milkdown-plugin-mdi'
 ```
 
 ## `initializeMdi()`
@@ -17,20 +10,7 @@ Initializes the MDI JavaScript binding used by the parser and canonical serializ
 
 ## `mdi()`
 
-Returns Milkdown plugins that register the MDI remark adapter, semantic schema,
-commands, and plain-text clipboard serializer. Use it alongside Milkdown's
-CommonMark preset.
-
-## Editor commands
-
-`insertMdiRubyCommand` inserts an atomic Ruby node from a structured
-`{ base, ruby }` payload. `toggleMdiTcyCommand` toggles the TCY mark on the
-current selection. Call them through Milkdown's `commandsCtx`; applications do
-not need to build or parse MDI delimiters.
-
-`mdiClipboardSerializer` is installed by `mdi()` and writes semantic plain text
-for selected MDI content. Rich HTML clipboard serialization remains owned by
-Milkdown and ProseMirror.
+Returns Milkdown plugins that register the MDI remark adapter and supported inline schemas. Use it alongside Milkdown's CommonMark preset.
 
 ## `getMdi()`
 
@@ -49,4 +29,4 @@ Text-block ranges belong to that exact `source` revision. Store a revision or ha
 
 ## Intentionally absent APIs
 
-This package does not provide `getMdiIR()`, `getMdiText()`, `getMdiTextBlocks()`, or search APIs. Parsing, text projection, text blocks, diagnostics, and source maps are MDI responsibilities and must be accessed directly through `@illusions-lab/mdi`. The plugin public API remains limited to Milkdown integration, editor commands, clipboard behavior, and complete canonical source extraction.
+This package does not provide `getMdiIR()`, `getMdiText()`, `getMdiTextBlocks()`, or search APIs. Parsing, text projection, text blocks, diagnostics, and source maps are MDI responsibilities and must be accessed directly through `@illusions-lab/mdi`. The plugin public API remains limited to Milkdown integration and complete canonical source extraction.
