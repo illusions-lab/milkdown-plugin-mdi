@@ -123,9 +123,16 @@ describe('DOM and schema trust boundaries', () => {
         content: [{ type: 'text', text: '字', marks: [{ type: 'mdiKern', attrs: { amount: '1px' } }] }],
       }],
     })).toThrow('Invalid MDI kern amount')
+    expect(() => schema.nodeFromJSON({
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [{ type: 'text', text: '字', marks: [{ type: 'mdiBoten', attrs: { mark: 'ab' } }] }],
+      }],
+    })).toThrow('Invalid MDI emphasis mark')
   })
 
-  it('keeps a DOM-provided boten marker inside its CSS string value', async () => {
+  it('rejects a DOM-provided boten marker that is not one valid grapheme', async () => {
     const editor = await createEditor('boundary')
     const schema = editor.action((ctx) => ctx.get(schemaCtx))
     const parsed = parseDom(
@@ -135,10 +142,7 @@ describe('DOM and schema trust boundaries', () => {
     const rendered = serializeFragment(schema, parsed)
     const boten = rendered.querySelector<HTMLElement>('.mdi-boten')
 
-    expect(boten).not.toBeNull()
-    expect(boten?.style.color).toBe('')
-    expect(boten?.style.getPropertyValue('--x')).toBe('')
-    expect(boten?.style.getPropertyValue('--mdi-boten-mark')).toContain('color:red')
+    expect(boten).toBeNull()
   })
 })
 

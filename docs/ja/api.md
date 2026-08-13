@@ -1,7 +1,15 @@
 # API
 
 ```ts
-import { getMdi, initializeMdi, mdi } from '@illusions-lab/milkdown-plugin-mdi'
+import {
+  createMdiEditorMapping,
+  getMdi,
+  mapMdiSourceSpanToCurrentEditorRanges,
+  mdi,
+  mdiClipboard,
+  mdiEditCommand,
+  mdiInputRules,
+} from '@illusions-lab/milkdown-plugin-mdi'
 ```
 
 ## `initializeMdi()`
@@ -29,9 +37,39 @@ const { blocks } = getMdiTextBlocks(source)
 
 text-block range は、その `source` revision にだけ属します。revision または hash と一緒に保存してください。本 plugin は editor の変更を越えて range を安定化しません。
 
+## Source span から editor range への変換
+
+`createMdiEditorMapping()` は、完全に同一の canonical source と ProseMirror
+document を結びつけた immutable snapshot を作成します。
+`mapMdiSourceSpanToCurrentEditorRanges()` は document が変更済みなら
+`reason: 'stale'` を返します。transaction や undo/redo の後は upstream
+解析と snapshot を一緒に作り直してください。synthetic text や editor 上に
+表現がない構文は明示的に unmapped となります。
+
+## 型付き編集 API
+
+`mdiEditCommand()` は ruby、TCY、傍点、no-break、warichu、kern、明示改行、
+blank、pagebreak、indent/bottom を扱う通常の ProseMirror command を返します。
+`canApplyMdiEdit()` と `inspectMdiSelection()` を UI の状態判定に利用できます。
+無効な値や構造上適用できない操作は document を変更せず `false` を返します。
+
+## opt-in input / clipboard
+
+`mdi()` だけでは有効になりません。必要な application だけ登録します。
+
+```ts
+Editor.make()
+  .use(commonmark)
+  .use(mdi())
+  .use([mdiInputRules(), mdiClipboard()])
+```
+
+input candidate は公式 parser で確認されます。clipboard は canonical MDI の
+plain-text fallback を常に保持し、MDI でない入力は通常の ProseMirror 処理へ
+そのままフォールバックします。
+
 ## 意図的に提供しない API
 
 このパッケージは `getMdiIR()`、`getMdiText()`、`getMdiTextBlocks()`、検索 API を提供しません。解析、テキスト投影、text block、diagnostics、source map は MDI の責務であり、`@illusions-lab/mdi` を直接利用してください。
 
-block 専用の export は追加せず、public API は `getMdi`、`initializeMdi`、
-`mdi` のままです。
+mapping API は upstream の解析結果を利用しますが、それを proxy または再構築しません。

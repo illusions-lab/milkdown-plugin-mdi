@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-08-13
+
+- Add exact-source MDI UTF-8 source-span to ProseMirror range mapping snapshots.
+- Add typed, schema-safe commands and selection inspection for every supported MDI construct.
+- Add independently registerable MDI input rules and semantic clipboard conversion with lossless fallback.
+- Require `@illusions-lab/mdi` 2.0.20 for authoritative inverse source-span resolution.
+
 ## 0.2.0 - 2026-08-13
 
 - Add semantic Milkdown block schemas for MDI blank lines and plain, right, and left pagebreaks.

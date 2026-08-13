@@ -1,3 +1,4 @@
+import { type MilkdownPlugin } from '@milkdown/ctx'
 import { defaultValueCtx, Editor, rootCtx } from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { afterEach, beforeAll, expect } from 'vitest'
@@ -21,13 +22,13 @@ afterEach(async () => {
   errors = []
 })
 
-export const createEditor = async (source: string) => {
+export const createEditor = async (source: string, plugins: MilkdownPlugin[] = []) => {
   const root = document.createElement('div')
   document.body.append(root)
   const editor = Editor.make().config((ctx) => {
     ctx.set(rootCtx, root)
     ctx.set(defaultValueCtx, source)
-  }).use(commonmark).use(mdi())
+  }).use(commonmark).use(mdi()).use(plugins)
   await editor.create()
   editors.push({ editor, root })
   return editor

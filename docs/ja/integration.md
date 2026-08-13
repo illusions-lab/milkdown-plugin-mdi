@@ -48,6 +48,13 @@ block の semantic DOM は `data-mdi-blank`、`data-mdi-pagebreak`、任意の
 variant を含む paged media break、indent の論理 block-start 間隔、任意の
 論理方向 offset を持つ bottom paragraph の配置を適用します。
 
-## 意図的に提供しない編集機能
+## 任意の編集機能
 
-このマイルストーンには input rule、popover、貼り付け処理、独自 clipboard serialization はありません。アプリケーションは独自の UI を構築できますが、永続化と解析の境界としては `getMdi()` を使用してください。
+`mdi()` は schema と永続化だけを登録します。直接構文入力や semantic copy / paste
+が製品に適する場合だけ、`mdiInputRules()` と `mdiClipboard()` を明示的に登録して
+ください。`mdiEditCommand()` は型付き command を提供しますが、menu、keybinding、
+dialog、selection policy は追加しません。
+
+source/editor mapping は immutable snapshot です。document transaction
+（undo/redo を含む）の後は upstream MDI 解析と `createMdiEditorMapping()` の両方を
+作り直してください。current-editor mapping action は stale snapshot を拒否します。

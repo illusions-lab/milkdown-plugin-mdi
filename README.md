@@ -31,9 +31,12 @@ npm install @illusions-lab/milkdown-plugin-mdi @milkdown/core @milkdown/ctx @mil
 import { Editor } from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
 import {
+  createMdiEditorMapping,
   getMdi,
   initializeMdi,
   mdi,
+  mdiClipboard,
+  mdiInputRules,
 } from '@illusions-lab/milkdown-plugin-mdi'
 import '@illusions-lab/milkdown-plugin-mdi/style.css'
 
@@ -42,6 +45,8 @@ await initializeMdi()
 const editor = await Editor.make()
   .use(commonmark)
   .use(mdi())
+  // Optional authoring behavior:
+  .use([mdiInputRules(), mdiClipboard()])
   .create()
 
 const canonicalSource = editor.action(getMdi())
@@ -73,10 +78,16 @@ document metadata rather than displayed as editable body content. Ruby and the
 standalone block constructs are atomic; the other text constructs remain
 editable marks.
 
-Commands, input rules, popovers, paste handling, and custom clipboard
-serialization are not included. The package does not impose vertical writing
-or application-specific file-extension logic. Use
+Typed transaction primitives and opt-in MDI input/clipboard plugins are
+included. They do not install keybindings, menus, confirmations, or other
+product UX. The package does not impose vertical writing or
+application-specific file-extension logic. Use
 `@illusions-lab/milkdown-plugin-vertical-writing` for visual writing direction.
+
+Source-coordinate consumers can create an immutable mapping snapshot with
+`createMdiEditorMapping()`. It binds Rust-owned UTF-8 spans and canonical
+grapheme ranges to the exact current ProseMirror document; after any document
+transaction, create a new snapshot instead of reusing stale positions.
 
 ## Development
 

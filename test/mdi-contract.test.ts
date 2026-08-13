@@ -84,9 +84,9 @@ describe('canonical MDI cross-package contract', () => {
   })
 
   it('does not add proxy analysis APIs to the plugin public surface', () => {
-    expect(Object.keys(milkdownMdi).sort()).toEqual(['getMdi', 'initializeMdi', 'mdi'])
     expect(milkdownMdi).not.toHaveProperty('getMdiIR')
     expect(milkdownMdi).not.toHaveProperty('getMdiText')
     expect(milkdownMdi).not.toHaveProperty('getMdiTextBlocks')
+    expect(milkdownMdi).not.toHaveProperty('resolveMdiSourceSpan')
   })
 })

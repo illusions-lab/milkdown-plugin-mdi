@@ -48,6 +48,14 @@ stylesheet gives blank blocks a logical one-em minimum size, applies paged
 media breaks (including right/left variants), adds logical block-start indent
 spacing, and aligns bottom paragraphs with an optional logical offset.
 
-## Deliberately absent authoring behavior
+## Optional authoring behavior
 
-This milestone provides no input rules, popovers, paste handling, or custom clipboard serialization. Applications may build their own UI around the editor, while treating `getMdi()` as the supported persistence and analysis boundary.
+`mdi()` installs schema and persistence support only. Register
+`mdiInputRules()` and/or `mdiClipboard()` explicitly when direct syntax entry or
+semantic MDI copy/paste fits the product. Typed commands are exported through
+`mdiEditCommand()` without installing menus, keybindings, dialogs, or selection
+policy.
+
+Source/editor mappings are immutable snapshots. Recompute both upstream MDI
+analysis and `createMdiEditorMapping()` after a document change, including
+undo/redo; stale snapshots are rejected by the current-editor mapping action.

@@ -166,6 +166,10 @@ const graphemes = (value: string) => {
   return Array.from(value)
 }
 
+const isMdiMark = (value: unknown): value is string => typeof value === 'string'
+  && graphemes(value).length === 1
+  && !/[\s\p{Cc}\p{Cf}]/u.test(value)
+
 const mdiRubySchema = $node('mdiRuby', () => ({
   inline: true,
   group: 'inline',
@@ -279,11 +283,21 @@ const gfmDeleteSchema = $markSchema('mdiGfmDelete', () => ({
 }))
 
 const mdiBotenSchema = $markSchema('mdiBoten', () => ({
-  attrs: { mark: { default: '﹅', validate: 'string' } },
+  attrs: {
+    mark: {
+      default: '﹅',
+      validate: (value) => {
+        if (!isMdiMark(value)) throw new RangeError(`Invalid MDI emphasis mark: ${String(value)}`)
+      },
+    },
+  },
   parseDOM: [
     {
       tag: 'span.mdi-boten',
-      getAttrs: (dom) => ({ mark: stringAttribute(dom as HTMLElement, 'data-mdi-mark') || '﹅' }),
+      getAttrs: (dom) => {
+        const mark = stringAttribute(dom as HTMLElement, 'data-mdi-mark') || '﹅'
+        return isMdiMark(mark) ? { mark } : false
+      },
     },
   ],
   toDOM: (mark) => [
@@ -471,7 +485,7 @@ const mdiPagebreakSchema = $node('mdiPagebreak', () => ({
 const mdiLayoutAttribute = {
   default: null,
   validate: (value: unknown) => {
-    if (value === null || (typeof value === 'number' && Number.isFinite(value))) return
+    if (value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 0)) return
     throw new RangeError(`Invalid MDI paragraph layout value: ${String(value)}`)
   },
 }
@@ -604,3 +618,7 @@ export function getMdi(): (ctx: Ctx) => string {
     return serializeMdi(candidate) === candidate ? candidate : canonical
   }
 }
+
+export * from './editing.js'
+export * from './input-clipboard.js'
+export * from './mapping.js'

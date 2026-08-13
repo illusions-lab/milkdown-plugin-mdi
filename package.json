@@ -1,6 +1,6 @@
 {
   "name": "@illusions-lab/milkdown-plugin-mdi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MDI syntax support for Milkdown",
   "keywords": [
     "milkdown",
@@ -87,7 +87,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@illusions-lab/mdi": "^2.0.19",
+    "@illusions-lab/mdi": "^2.0.20",
     "@illusions-lab/mdi-remark": "^2.0.32",
     "mdast-util-mdi": "^2.0.21"
   }

@@ -107,12 +107,24 @@ try {
   writeFileSync(join(work, 'contract.ts'), `
     import type { Ctx, MilkdownPlugin } from '@milkdown/ctx'
     import { getMdiTextBlocks, type MdiTextBlocksResult } from '@illusions-lab/mdi'
-    import { getMdi, initializeMdi, mdi } from '@illusions-lab/milkdown-plugin-mdi'
+    import type { Command } from '@milkdown/prose/state'
+    import {
+      createMdiEditorMapping,
+      getMdi,
+      initializeMdi,
+      mdi,
+      mdiClipboard,
+      mdiEditCommand,
+      mdiInputRules,
+    } from '@illusions-lab/milkdown-plugin-mdi'
     const plugins: MilkdownPlugin[] = mdi()
+    const optionalPlugins: MilkdownPlugin[] = [mdiInputRules(), mdiClipboard()]
+    const command: Command = mdiEditCommand({ type: 'insertBlank' })
     const action: (ctx: Ctx) => string = getMdi()
+    const mappingAction = createMdiEditorMapping()
     const initialized: Promise<void> = initializeMdi()
     const projection: MdiTextBlocksResult = getMdiTextBlocks('# typed consumer')
-    void [plugins, action, initialized, projection]
+    void [plugins, optionalPlugins, command, action, mappingAction, initialized, projection]
   `)
   writeFileSync(join(work, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -128,9 +140,16 @@ try {
   // Verify the minimum declared peer versions in an otherwise clean consumer.
   installPeers('7.21.3', tarball)
   execFileSync(process.execPath, ['--input-type=module', '--eval', `
-    import { initializeMdi, mdi, getMdi } from '@illusions-lab/milkdown-plugin-mdi'
+    import {
+      createMdiEditorMapping, initializeMdi, mdi, mdiClipboard,
+      mdiEditCommand, mdiInputRules, getMdi,
+    } from '@illusions-lab/milkdown-plugin-mdi'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
-    if (typeof initializeMdi !== 'function' || !Array.isArray(mdi()) || typeof getMdi !== 'function') process.exit(1)
+    if (
+      typeof initializeMdi !== 'function' || !Array.isArray(mdi()) || typeof getMdi !== 'function'
+      || typeof createMdiEditorMapping !== 'function' || typeof mdiEditCommand !== 'function'
+      || typeof mdiInputRules() !== 'function' || typeof mdiClipboard() !== 'function'
+    ) process.exit(1)
     if ([getMdiTextBlocks, parse, renderText, serializeMdi].some((value) => typeof value !== 'function')) process.exit(1)
   `], { cwd: work, stdio: 'inherit' })
   writeFileSync(join(work, 'index.html'), '<div id="editor"></div><script type="module" src="/main.js"></script>')
