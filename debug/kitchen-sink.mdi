@@ -6,6 +6,7 @@ lang: ja
 date: 2026-07-19
 writing-mode: horizontal
 page-progression: ltr
+debug-fixture: kitchen-sink-showroom
 ---
 
 # 序 — Kitchen Sink
@@ -112,28 +113,28 @@ console.log(x);
 
 ### 9. 字下げ・地付き「Block Alignment」
 
-\[\[indent:2]]
+[[indent:2]]
 我輩は猫である。名前はまだ無い。
 
-\[\[bottom]]
+[[bottom]]
 著者識
 
-\[\[bottom:2]]
+[[bottom:2]]
 令和七年七月
 
 ### 10. 改ページ「Page Break」
 
 第一章はここで終わる。
 
-\[\[pagebreak]]
+[[pagebreak]]
 
 第二章が始まる。
 
-\[\[pagebreak:right]]
+[[pagebreak:right]]
 
 第三章、改丁で右ページ（奇数ページ）から開始。
 
-\[\[pagebreak:left]]
+[[pagebreak:left]]
 
 第四章、改丁で左ページ（偶数ページ）から開始。
 

@@ -40,7 +40,13 @@ YAML front matter は編集可能な ProseMirror 本文を作る前に取り除�
 
 ## スタイル用フック
 
-標準表示には `@illusions-lab/milkdown-plugin-mdi/style.css` を読み込みます。安定した CSS hook は `mdi-ruby`、`mdi-tcy`、`mdi-boten`、`mdi-no-break`、`mdi-warichu`、`mdi-kern`、`mdi-break` と対応する `data-mdi-*` 属性です。
+標準表示には `@illusions-lab/milkdown-plugin-mdi/style.css` を読み込みます。安定した CSS hook は `mdi-ruby`、`mdi-tcy`、`mdi-boten`、`mdi-no-break`、`mdi-warichu`、`mdi-kern`、`mdi-break`、`mdi-blank`、`mdi-pagebreak`、`mdi-indent`、`mdi-bottom` です。
+
+block の semantic DOM は `data-mdi-blank`、`data-mdi-pagebreak`、任意の
+`data-mdi-variant`、`data-mdi-indent`、`data-mdi-bottom` を使用します。
+標準 stylesheet は blank に論理方向の最小 1em サイズを与え、right / left
+variant を含む paged media break、indent の論理 block-start 間隔、任意の
+論理方向 offset を持つ bottom paragraph の配置を適用します。
 
 ## 意図的に提供しない編集機能
 

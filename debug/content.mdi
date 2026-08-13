@@ -1,14 +1,14 @@
 ---
 mdi: "2.0"
-title: Inline MDI Debug
+title: MDI Editor Showroom
 author: illusions-lab
 lang: ja
 writing-mode: horizontal
 page-progression: ltr
-debug-fixture: inline-edge-cases
+debug-fixture: editor-showroom
 ---
 
-# Inline MDI
+# MDI Editor Showroom
 
 Markdown remains editable: **strong**, *emphasis*, ~~取り消し線~~, `code`, and [a link](https://mdi.illusions.app/).
 
@@ -27,6 +27,35 @@ Warichu: 大安[[warichu:六曜の一つで吉日とされる]]だった。
 Kerning: [[kern:-0.1em:確実]] and [[kern:+0.3em:沈黙]]。
 
 Explicit break: 春は曙。[[br]]やうやう白くなりゆく。
+
+## Block bridge showroom
+
+[[indent:2]]
+二字下げの段落。本文を編集しても indent metadata は段落に残ります。
+
+[[bottom]]
+地付きの署名
+
+[[bottom:2]]
+末尾から二字分戻した日付
+
+通常の改ページは次のページへ送ります。
+
+[[pagebreak]]
+
+右ページ指定の改ページです。
+
+[[pagebreak:right]]
+
+左ページ指定の改ページです。
+
+[[pagebreak:left]]
+
+次の二つは同じ blank block になります。最初は推奨記法です。
+
+\
+
+[[blank]]
 
 ## Nested combinations
 

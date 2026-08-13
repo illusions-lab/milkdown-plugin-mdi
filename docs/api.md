@@ -10,7 +10,9 @@ Initializes the MDI JavaScript binding used by the parser and canonical serializ
 
 ## `mdi()`
 
-Returns Milkdown plugins that register the MDI remark adapter and supported inline schemas. Use it alongside Milkdown's CommonMark preset.
+Returns Milkdown plugins that register the MDI remark adapter, inline schemas,
+blank/pagebreak block schemas, and an extended CommonMark paragraph schema for
+indent/bottom attributes. Use it alongside Milkdown's CommonMark preset.
 
 ## `getMdi()`
 
@@ -29,4 +31,7 @@ Text-block ranges belong to that exact `source` revision. Store a revision or ha
 
 ## Intentionally absent APIs
 
-This package does not provide `getMdiIR()`, `getMdiText()`, `getMdiTextBlocks()`, or search APIs. Parsing, text projection, text blocks, diagnostics, and source maps are MDI responsibilities and must be accessed directly through `@illusions-lab/mdi`. The plugin public API remains limited to Milkdown integration and complete canonical source extraction.
+This package does not provide `getMdiIR()`, `getMdiText()`, `getMdiTextBlocks()`, or search APIs. Parsing, text projection, text blocks, diagnostics, and source maps are MDI responsibilities and must be accessed directly through `@illusions-lab/mdi`.
+
+The plugin adds no block-specific exports. Its public API remains `getMdi`,
+`initializeMdi`, and `mdi`.

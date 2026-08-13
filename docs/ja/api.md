@@ -10,7 +10,9 @@ parser と canonical serializer が使う MDI JavaScript binding を初期化し
 
 ## `mdi()`
 
-MDI remark adapter と対応するインライン schema を登録する Milkdown plugin を返します。Milkdown の CommonMark preset と併用してください。
+MDI remark adapter、inline schema、blank / pagebreak の block schema、
+indent / bottom attr 用に拡張した CommonMark paragraph schema を登録する
+Milkdown plugin を返します。Milkdown の CommonMark preset と併用してください。
 
 ## `getMdi()`
 
@@ -29,4 +31,7 @@ text-block range は、その `source` revision にだけ属します。revision
 
 ## 意図的に提供しない API
 
-このパッケージは `getMdiIR()`、`getMdiText()`、`getMdiTextBlocks()`、検索 API を提供しません。解析、テキスト投影、text block、diagnostics、source map は MDI の責務であり、`@illusions-lab/mdi` を直接利用してください。本 plugin の public API は Milkdown 統合と完全な canonical source の取得だけに限定します。
+このパッケージは `getMdiIR()`、`getMdiText()`、`getMdiTextBlocks()`、検索 API を提供しません。解析、テキスト投影、text block、diagnostics、source map は MDI の責務であり、`@illusions-lab/mdi` を直接利用してください。
+
+block 専用の export は追加せず、public API は `getMdi`、`initializeMdi`、
+`mdi` のままです。

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('initializes WASM, creates Milkdown, and serializes inline MDI', async ({ page }) => {
+test('initializes WASM, creates Milkdown, and serializes inline and block MDI', async ({ page }) => {
   const errors: string[] = []
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text())
@@ -13,8 +13,8 @@ test('initializes WASM, creates Milkdown, and serializes inline MDI', async ({ p
   const smoke = await page.evaluate(() => window.__MDI_SMOKE__)
   expect(smoke?.error).toBeUndefined()
   expect(smoke?.ready).toBe(true)
-  expect(smoke?.serialized).toContain('title: Inline MDI Debug')
-  expect(smoke?.serialized).toContain('debug-fixture: inline-edge-cases')
+  expect(smoke?.serialized).toContain('title: MDI Editor Showroom')
+  expect(smoke?.serialized).toContain('debug-fixture: editor-showroom')
   expect(smoke?.serialized).toContain('{東京|とうきょう}')
   expect(smoke?.serialized).toContain('{雪女|ゆき.おんな}')
   expect(smoke?.serialized).toContain('^12^')
@@ -23,14 +23,48 @@ test('initializes WASM, creates Milkdown, and serializes inline MDI', async ({ p
   expect(smoke?.serialized).toContain('[[warichu:')
   expect(smoke?.serialized).toContain('[[kern:-0.1em:')
   expect(smoke?.serialized).toContain('[[br]]')
+  expect(smoke?.serialized).toContain('[[indent:2]]')
+  expect(smoke?.serialized).toContain('[[bottom]]')
+  expect(smoke?.serialized).toContain('[[bottom:2]]')
+  expect(smoke?.serialized).toContain('[[pagebreak]]')
+  expect(smoke?.serialized).toContain('[[pagebreak:right]]')
+  expect(smoke?.serialized).toContain('[[pagebreak:left]]')
+  expect(smoke?.serialized).toContain('\\\n')
   await expect(page.getByRole('heading', { name: 'Front Matter' })).toBeVisible()
-  await expect(page.locator('#frontmatter-values')).toContainText('Inline MDI Debug')
-  await expect(page.locator('#frontmatter-values')).toContainText('inline-edge-cases')
-  await expect(page.locator('.editor')).not.toContainText('title: Inline MDI Debug')
+  await expect(page.locator('#frontmatter-values')).toContainText('MDI Editor Showroom')
+  await expect(page.locator('#frontmatter-values')).toContainText('editor-showroom')
+  await expect(page.locator('.editor')).not.toContainText('title: MDI Editor Showroom')
 
   for (const className of ['mdi-ruby', 'mdi-tcy', 'mdi-boten', 'mdi-no-break', 'mdi-warichu', 'mdi-kern', 'mdi-break']) {
     await expect(page.locator(`.${className}`).first()).toBeAttached()
   }
+  for (const className of ['mdi-blank', 'mdi-pagebreak', 'mdi-indent', 'mdi-bottom']) {
+    await expect(page.locator(`.${className}`).first()).toBeAttached()
+  }
+  await expect(page.locator('.mdi-pagebreak')).toHaveCount(3)
+  await expect(page.locator('.mdi-pagebreak').nth(0)).not.toHaveAttribute('data-mdi-variant')
+  await expect(page.locator('.mdi-pagebreak').nth(1)).toHaveAttribute('data-mdi-variant', 'right')
+  await expect(page.locator('.mdi-pagebreak').nth(2)).toHaveAttribute('data-mdi-variant', 'left')
+  await expect(page.locator('.mdi-blank')).toHaveCount(2)
+  await expect(page.locator('.mdi-indent')).toHaveAttribute('data-mdi-indent', '2')
+  await expect(page.locator('.mdi-bottom')).toHaveCount(2)
+  await expect(page.locator('.mdi-bottom').nth(0)).toHaveAttribute('data-mdi-bottom', '0')
+  await expect(page.locator('.mdi-bottom').nth(1)).toHaveAttribute('data-mdi-bottom', '2')
+
+  const blockStyles = await page.evaluate(() => ({
+    blankMinBlockSize: getComputedStyle(document.querySelector('.mdi-blank')!).minBlockSize,
+    plainBreak: getComputedStyle(document.querySelector('.mdi-pagebreak')!).breakAfter,
+    rightBreak: getComputedStyle(document.querySelector('.mdi-pagebreak[data-mdi-variant="right"]')!).breakAfter,
+    leftBreak: getComputedStyle(document.querySelector('.mdi-pagebreak[data-mdi-variant="left"]')!).breakAfter,
+    indentMargin: getComputedStyle(document.querySelector('.mdi-indent')!).marginBlockStart,
+    bottomPosition: getComputedStyle(document.querySelector('.mdi-bottom')!).position,
+  }))
+  expect(blockStyles.blankMinBlockSize).not.toBe('0px')
+  expect(blockStyles.plainBreak).toBe('page')
+  expect(blockStyles.rightBreak).toBe('right')
+  expect(blockStyles.leftBreak).toBe('left')
+  expect(blockStyles.indentMargin).not.toBe('0px')
+  expect(blockStyles.bottomPosition).toBe('relative')
 
   await page.getByRole('button', { name: 'Vertical' }).click()
   await expect(page.getByRole('button', { name: 'Vertical' })).toHaveAttribute('aria-pressed', 'true')

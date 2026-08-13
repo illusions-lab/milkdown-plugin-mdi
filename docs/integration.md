@@ -40,7 +40,13 @@ YAML front matter is removed before the editable ProseMirror body is created. It
 
 ## Styling hooks
 
-Import `@illusions-lab/milkdown-plugin-mdi/style.css` for the default presentation. Stable CSS hooks include `mdi-ruby`, `mdi-tcy`, `mdi-boten`, `mdi-no-break`, `mdi-warichu`, `mdi-kern`, and `mdi-break` (with corresponding `data-mdi-*` attributes).
+Import `@illusions-lab/milkdown-plugin-mdi/style.css` for the default presentation. Stable CSS hooks include `mdi-ruby`, `mdi-tcy`, `mdi-boten`, `mdi-no-break`, `mdi-warichu`, `mdi-kern`, `mdi-break`, `mdi-blank`, `mdi-pagebreak`, `mdi-indent`, and `mdi-bottom`.
+
+Block semantic DOM uses `data-mdi-blank`, `data-mdi-pagebreak`, optional
+`data-mdi-variant`, `data-mdi-indent`, and `data-mdi-bottom`. The default
+stylesheet gives blank blocks a logical one-em minimum size, applies paged
+media breaks (including right/left variants), adds logical block-start indent
+spacing, and aligns bottom paragraphs with an optional logical offset.
 
 ## Deliberately absent authoring behavior
 

@@ -2,6 +2,7 @@ import { createSlice, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
 import { serializeMdi } from '@illusions-lab/mdi'
 import remarkMdi from '@illusions-lab/mdi-remark'
 import { InitReady, remarkPluginsCtx } from '@milkdown/core'
+import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { mdastToMdiSource } from 'mdast-util-mdi'
 
@@ -35,10 +36,12 @@ const SUPPORTED_MDAST_TYPES = new Set([
   'link',
   'list',
   'listItem',
+  'mdiBlank',
   'mdiBreak',
   'mdiEm',
   'mdiKern',
   'mdiNoBreak',
+  'mdiPagebreak',
   'mdiRuby',
   'mdiTcy',
   'mdiWarichu',
@@ -60,14 +63,11 @@ const serializeFallback = (node: PositionalMdastNode): string => {
 }
 
 const needsLiteralFallback = (node: PositionalMdastNode) => {
-  if (!SUPPORTED_MDAST_TYPES.has(node.type)) return true
-  if (node.type !== 'paragraph') return false
-  return node.data?.mdiIndent !== undefined || node.data?.mdiBottom !== undefined
+  return !SUPPORTED_MDAST_TYPES.has(node.type)
 }
 
-// Block MDI and other mdast extensions are intentionally outside this
-// milestone. Preserve their Markdown as editable literal text instead of
-// allowing one unsupported node to abort parsing of the entire document.
+// Preserve genuinely unknown mdast extensions as editable literal text instead
+// of allowing one unsupported node to abort parsing of the entire document.
 const normalizeUnsupportedNodes = (parent: PositionalMdastNode) => {
   if (!parent.children) return
   parent.children = parent.children.map((node) => {
@@ -403,6 +403,150 @@ const mdiBreakSchema = $node('mdiBreak', () => ({
   },
 }))
 
+const mdiBlankSchema = $node('mdiBlank', () => ({
+  group: 'block',
+  atom: true,
+  selectable: true,
+  parseDOM: [{ tag: 'div.mdi-blank[data-mdi-blank]' }],
+  toDOM: () => ['div', { class: 'mdi-blank', 'data-mdi-blank': '' }, ['br']],
+  parseMarkdown: {
+    match: (node) => node.type === 'mdiBlank',
+    runner: (state, _node, type) => state.addNode(type),
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'mdiBlank',
+    runner: (state) => state.addNode('mdiBlank'),
+  },
+}))
+
+const isPagebreakVariant = (value: unknown): value is 'right' | 'left' =>
+  value === 'right' || value === 'left'
+
+const mdiPagebreakSchema = $node('mdiPagebreak', () => ({
+  group: 'block',
+  atom: true,
+  selectable: true,
+  attrs: {
+    variant: {
+      default: null,
+      validate: (value) => {
+        if (value === null || isPagebreakVariant(value)) return
+        throw new RangeError(`Invalid MDI pagebreak variant: ${String(value)}`)
+      },
+    },
+  },
+  // Win over CommonMark's thematic break rule when parsing our semantic DOM.
+  parseDOM: [{
+    tag: 'hr.mdi-pagebreak[data-mdi-pagebreak]',
+    priority: 60,
+    getAttrs: (dom) => {
+      const value = (dom as HTMLElement).getAttribute('data-mdi-variant')
+      return value === null || isPagebreakVariant(value) ? { variant: value } : false
+    },
+  }],
+  toDOM: (node) => [
+    'hr',
+    {
+      class: 'mdi-pagebreak',
+      'data-mdi-pagebreak': '',
+      ...(isPagebreakVariant(node.attrs.variant)
+        ? { 'data-mdi-variant': node.attrs.variant }
+        : {}),
+    },
+  ],
+  parseMarkdown: {
+    match: (node) => node.type === 'mdiPagebreak',
+    runner: (state, node, type) => state.addNode(type, {
+      variant: isPagebreakVariant(node.variant) ? node.variant : null,
+    }),
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'mdiPagebreak',
+    runner: (state, node) => state.addNode('mdiPagebreak', undefined, undefined, {
+      ...(isPagebreakVariant(node.attrs.variant) ? { variant: node.attrs.variant } : {}),
+    }),
+  },
+}))
+
+const mdiLayoutAttribute = {
+  default: null,
+  validate: (value: unknown) => {
+    if (value === null || (typeof value === 'number' && Number.isFinite(value))) return
+    throw new RangeError(`Invalid MDI paragraph layout value: ${String(value)}`)
+  },
+}
+
+const parseMdiLayoutAttribute = (element: HTMLElement, name: string) => {
+  const value = element.getAttribute(name)
+  if (value === null) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
+  const schema = previous(ctx)
+  return {
+    ...schema,
+    attrs: {
+      ...schema.attrs,
+      mdiIndent: mdiLayoutAttribute,
+      mdiBottom: mdiLayoutAttribute,
+    },
+    parseDOM: [{
+      tag: 'p',
+      getAttrs: (dom) => {
+        const element = dom as HTMLElement
+        return {
+          mdiIndent: parseMdiLayoutAttribute(element, 'data-mdi-indent'),
+          mdiBottom: parseMdiLayoutAttribute(element, 'data-mdi-bottom'),
+        }
+      },
+    }],
+    toDOM: (node) => {
+      const base = schema.toDOM?.(node) as unknown[] | undefined
+      const attributes: Record<string, unknown> = {
+        ...(base?.[1] && typeof base[1] === 'object' ? base[1] as Record<string, unknown> : {}),
+      }
+      if (typeof node.attrs.mdiIndent === 'number') {
+        attributes.class = [attributes.class, 'mdi-indent'].filter(Boolean).join(' ')
+        attributes['data-mdi-indent'] = String(node.attrs.mdiIndent)
+        attributes.style = [attributes.style, `--mdi-indent: ${String(node.attrs.mdiIndent)}`]
+          .filter(Boolean).join('; ')
+      } else if (typeof node.attrs.mdiBottom === 'number') {
+        attributes.class = [attributes.class, 'mdi-bottom'].filter(Boolean).join(' ')
+        attributes['data-mdi-bottom'] = String(node.attrs.mdiBottom)
+        attributes.style = [attributes.style, `--mdi-bottom: ${String(node.attrs.mdiBottom)}`]
+          .filter(Boolean).join('; ')
+      }
+      return ['p', attributes, 0]
+    },
+    parseMarkdown: {
+      match: (node) => node.type === 'paragraph',
+      runner: (state, node, type) => {
+        const data = node.data as Record<string, unknown> | undefined
+        state.openNode(type, {
+          mdiIndent: typeof data?.mdiIndent === 'number' ? data.mdiIndent : null,
+          mdiBottom: typeof data?.mdiBottom === 'number' ? data.mdiBottom : null,
+        })
+        if (node.children) state.next(node.children)
+        else state.addText((node.value || '') as string)
+        state.closeNode()
+      },
+    },
+    toMarkdown: {
+      match: (node) => node.type.name === 'paragraph',
+      runner: (state, node) => {
+        const data: Record<string, number> = {}
+        if (typeof node.attrs.mdiIndent === 'number') data.mdiIndent = node.attrs.mdiIndent
+        else if (typeof node.attrs.mdiBottom === 'number') data.mdiBottom = node.attrs.mdiBottom
+        state.openNode('paragraph', undefined, Object.keys(data).length > 0 ? { data } : undefined)
+        state.next(node.content)
+        state.closeNode()
+      },
+    },
+  }
+})
+
 const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
   return async () => {
@@ -433,6 +577,9 @@ const mdiPlugins: MilkdownPlugin[] = [
   ...mdiWarichuSchema,
   ...mdiKernSchema,
   mdiBreakSchema,
+  mdiBlankSchema,
+  mdiPagebreakSchema,
+  ...mdiParagraphSchema,
 ]
 
 export function mdi(): MilkdownPlugin[] {

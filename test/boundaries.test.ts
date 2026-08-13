@@ -199,13 +199,20 @@ describe('persistence edge cases', () => {
     expect(editor.action(getMdi())).toBe(output)
   })
 
+  it('keeps an unknown table extension parseable and deterministic', async () => {
+    const editor = await createEditor('| A | B |\n| - | - |\n| 1 | 2 |')
+    const first = editor.action(getMdi())
+    expect(first).toContain('| A | B |')
+    expect(editor.action(getMdi())).toBe(first)
+    expect(() => parse(first)).not.toThrow()
+  })
+
   it.each([
-    ['table', '| A | B |\n| - | - |\n| 1 | 2 |', '| A | B |'],
     ['indent', '[[indent:2]]\nIndented', '[[indent:2]]'],
     ['bottom alignment', '[[bottom]]\nBottom', '[[bottom]]'],
     ['page break', 'Before\n\n[[pagebreak]]\n\nAfter', '[[pagebreak]]'],
     ['blank paragraph', 'Before\n\n[[blank]]\n\nAfter', '\\'],
-  ])('keeps unsupported %s syntax parseable and deterministic', async (_label, source, expected) => {
+  ])('keeps semantic %s blocks parseable and deterministic', async (_label, source, expected) => {
     const editor = await createEditor(source)
     const first = editor.action(getMdi())
     const second = editor.action(getMdi())

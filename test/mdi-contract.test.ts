@@ -54,8 +54,8 @@ describe('canonical MDI cross-package contract', () => {
     expect(firstText).toContain('blockquote')
     expect(firstText).toContain('list one')
 
-    // Unsupported block extensions remain editable literal Markdown, but the
-    // complete editor output still satisfies the upstream MDI source contract.
+    // Unknown extensions such as the table remain editable literal Markdown;
+    // supported MDI blocks still satisfy the upstream source contract.
     expect(source).toContain('fallback')
     expect(source).toContain('[[pagebreak]]')
     expect(() => parse(source)).not.toThrow()

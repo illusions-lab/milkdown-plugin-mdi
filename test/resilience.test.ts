@@ -96,6 +96,19 @@ describe('malformed inputs and deterministic fuzzing', () => {
     const parsed = DOMParser.fromSchema(schema).parse(root).toJSON()
     expect(parsed.content[0].content?.[0]).toMatchObject({ type: 'mdiRuby', attrs: { base: '字', ruby: '' } })
     expect(parsed.content[0].content?.[1]).toMatchObject({ type: 'text', text: 'x' })
+
+    expect(() => schema.nodeFromJSON({
+      type: 'paragraph',
+      attrs: { mdiIndent: '2', mdiBottom: null },
+    })).toThrow('Invalid MDI paragraph layout value')
+    expect(() => schema.nodeFromJSON({
+      type: 'paragraph',
+      attrs: { mdiIndent: Number.POSITIVE_INFINITY, mdiBottom: null },
+    })).toThrow('Invalid MDI paragraph layout value')
+    expect(schema.nodeFromJSON({
+      type: 'paragraph',
+      attrs: { mdiIndent: 2, mdiBottom: null },
+    }).attrs).toMatchObject({ mdiIndent: 2, mdiBottom: null })
   })
 
   it('canonicalizes a bounded seeded corpus without losing parseability', async () => {

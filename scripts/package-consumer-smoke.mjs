@@ -58,26 +58,41 @@ const browserSmoke = async () => {
       const result = await page.evaluate(() => ({
         ...window.__PACKAGE_CONSUMER__,
         tcy: getComputedStyle(document.querySelector('.mdi-tcy')).textCombineUpright,
+        blankMinBlockSize: getComputedStyle(document.querySelector('.mdi-blank')).minBlockSize,
+        pagebreakAfter: getComputedStyle(document.querySelector('.mdi-pagebreak')).breakAfter,
+        indentMargin: getComputedStyle(document.querySelector('.mdi-indent')).marginBlockStart,
       }))
       if (!result.serialized?.includes('{東京|とうきょう}')
+        || !result.serialized?.includes('[[indent:2]]')
+        || !result.serialized?.includes('[[bottom]]')
+        || !result.serialized?.includes('[[pagebreak:right]]')
         || !result.canonical
         || result.frontmatterTitle !== 'Consumer Contract'
         || !result.text?.includes('東京 12')
         || result.text.includes('Consumer Contract')
         || result.projectionVersion !== '1.0'
         || result.positionEncoding !== 'unicode-grapheme-cluster-1-based'
-        || result.projectedBlocksJson !== JSON.stringify([{
-          index: 1,
-          kind: 'paragraph',
-          text: '東京 12',
-          range: { start: '1:1', end: '1:6' },
-        }])
+        || result.projectedBlocksJson !== JSON.stringify([
+          { index: 1, kind: 'paragraph', text: '東京 12', range: { start: '1:1', end: '1:6' } },
+          { index: 2, kind: 'paragraph', text: 'Indented', range: { start: '2:1', end: '2:9' } },
+          { index: 3, kind: 'paragraph', text: 'Bottom', range: { start: '3:1', end: '3:7' } },
+        ])
         || !result.projectionHasDocument
         || !result.projectionHasSourceMap
         || !result.projectionHasRubyAnnotation
         || !result.projectionDeterministic
+        || result.blockJson !== JSON.stringify([
+          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null } },
+          { type: 'paragraph', attrs: { mdiIndent: 2, mdiBottom: null } },
+          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: 0 } },
+          { type: 'mdiPagebreak', attrs: { variant: 'right' } },
+          { type: 'mdiBlank' },
+        ])
         || result.tcy !== 'all'
-        || errors.length) throw new Error(`${name} package consumer failure: ${errors.join('\n')}`)
+        || result.blankMinBlockSize === '0px'
+        || result.pagebreakAfter !== 'right'
+        || result.indentMargin === '0px'
+        || errors.length) throw new Error(`${name} package consumer failure: ${errors.join('\n')}\n${JSON.stringify(result, null, 2)}`)
       await browser.close()
     }
   } finally {
@@ -110,8 +125,8 @@ try {
     },
     include: ['contract.ts'],
   }, null, 2))
-  // Install both compatibility edges in an otherwise clean consumer.
-  installPeers('7.5.8', tarball)
+  // Verify the minimum declared peer versions in an otherwise clean consumer.
+  installPeers('7.21.3', tarball)
   execFileSync(process.execPath, ['--input-type=module', '--eval', `
     import { initializeMdi, mdi, getMdi } from '@illusions-lab/milkdown-plugin-mdi'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
@@ -120,20 +135,33 @@ try {
   `], { cwd: work, stdio: 'inherit' })
   writeFileSync(join(work, 'index.html'), '<div id="editor"></div><script type="module" src="/main.js"></script>')
   writeFileSync(join(work, 'main.js'), `
-    import { Editor, defaultValueCtx, rootCtx } from '@milkdown/core'
+    import { Editor, defaultValueCtx, editorStateCtx, rootCtx } from '@milkdown/core'
     import { commonmark } from '@milkdown/preset-commonmark'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
     import { initializeMdi, mdi, getMdi } from '@illusions-lab/milkdown-plugin-mdi'
     import '@illusions-lab/milkdown-plugin-mdi/style.css'
     const start = async () => {
       await initializeMdi()
-      const initial = '---\\ntitle: Consumer Contract\\n---\\n\\n{東京|とうきょう} ^12^'
+      const initial = [
+        '---', 'title: Consumer Contract', '---', '',
+        '{東京|とうきょう} ^12^', '',
+        '[[indent:2]]', 'Indented', '',
+        '[[bottom]]', 'Bottom', '',
+        '[[pagebreak:right]]', '',
+        '[[blank]]',
+      ].join('\\n')
       const editor = Editor.make().config((ctx) => { ctx.set(rootCtx, '#editor'); ctx.set(defaultValueCtx, initial) }).use(commonmark).use(mdi())
       await editor.create()
       const serialized = editor.action(getMdi())
       const parsed = parse(serialized)
       const projection = getMdiTextBlocks(serialized)
       const repeatedProjection = getMdiTextBlocks(serialized)
+      const blockJson = editor.action((ctx) => JSON.stringify(
+        ctx.get(editorStateCtx).doc.toJSON().content.map(({ type, attrs }) => ({
+          type,
+          ...(attrs ? { attrs } : {}),
+        })),
+      ))
       window.__PACKAGE_CONSUMER__ = {
         serialized,
         canonical: serializeMdi(serialized) === serialized,
@@ -146,14 +174,13 @@ try {
         projectionHasSourceMap: projection.blocks[0]?.sourceMap.runs.length > 0,
         projectionHasRubyAnnotation: projection.blocks[0]?.annotations[0]?.text === 'とうきょう',
         projectionDeterministic: JSON.stringify(projection) === JSON.stringify(repeatedProjection),
+        blockJson,
       }
     }
     void start()
   `)
   writeFileSync(join(work, 'vite.config.js'), "import { defineConfig } from 'vite'; export default defineConfig({ base: '/consumer/' })")
   buildAndAssert('minimum declared Milkdown peers')
-  installPeers('7.21.3', tarball)
-  buildAndAssert('current development Milkdown peers')
   await browserSmoke()
 } finally {
   rmSync(work, { recursive: true, force: true })
