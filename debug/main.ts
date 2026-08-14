@@ -8,14 +8,29 @@ import '@illusions-lab/milkdown-plugin-vertical-writing/style.css'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { nord } from '@milkdown/theme-nord'
 import { parse } from '@illusions-lab/mdi'
-import { getMdi, initializeMdi, mdi } from '../src/index'
+import {
+  createMdiEditorMapping,
+  getMdi,
+  initializeMdi,
+  mapMdiSourceSpansToEditorRanges,
+  mdi,
+  mdiClipboard,
+  mdiInputRules,
+  parseMdiClipboard,
+} from '../src/index'
 import '../src/style.css'
 import markdown from './content.mdi?raw'
 import './style.css'
 
 declare global {
   interface Window {
-    __MDI_SMOKE__?: { ready: boolean; serialized?: string; error?: string }
+    __MDI_SMOKE__?: {
+      ready: boolean
+      serialized?: string
+      mappingMatches?: number
+      clipboardParsed?: boolean
+      error?: string
+    }
     __MDI_PERF__?: {
       loadBook: (minimumCharacters: number) => Promise<LargeDocumentMetrics>
     }
@@ -83,6 +98,7 @@ const makeEditor = (source: string) => Editor.make()
   .config(nord)
   .use(commonmark)
   .use(mdi())
+  .use([mdiInputRules(), mdiClipboard()])
   .use(verticalWriting({ mode: initialMode }))
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
@@ -167,7 +183,15 @@ const start = async () => {
 
     changeMode(initialMode)
     const serialized = editor.action(getMdi())
-    window.__MDI_SMOKE__ = { ready: true, serialized }
+    const ruby = serialized.indexOf('東京')
+    const startByte = new TextEncoder().encode(serialized.slice(0, ruby)).length
+    const snapshot = editor.action(createMdiEditorMapping())
+    const mappingMatches = mapMdiSourceSpansToEditorRanges(snapshot, [{
+      startByte,
+      endByte: startByte + new TextEncoder().encode('東京').length,
+    }])[0]?.matches.length
+    const clipboardParsed = editor.action(parseMdiClipboard('{字|じ}', { explicit: true })) !== null
+    window.__MDI_SMOKE__ = { ready: true, serialized, mappingMatches, clipboardParsed }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
     const details = error instanceof Error && error.stack ? `${message}\n${error.stack}` : message

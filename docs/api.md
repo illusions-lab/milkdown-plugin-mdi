@@ -5,6 +5,7 @@ import {
   createMdiEditorMapping,
   getMdi,
   mapMdiSourceSpanToCurrentEditorRanges,
+  mapMdiSourceSpansToEditorRanges,
   mdi,
   mdiClipboard,
   mdiEditCommand,
@@ -58,6 +59,13 @@ if (result.reason === 'stale') {
 text and source syntax without an editor representation return an explicit
 unmapped result. The mapping API never creates decorations or mutates history.
 
+Use `mapMdiSourceSpansToEditorRanges(snapshot, spans)` for multiple spans. It
+calls Rust's batch `resolveMdiSourceSpans()` once, then joins each canonical
+target to the transient `mdiProvenance` captured while the mdast-to-ProseMirror
+bridge built the document. It never associates nodes by editor text, substring
+search, DOM traversal, or source order. A snapshot becomes stale after every
+editor-state transaction, including undo and redo.
+
 ## Typed editing
 
 `mdiEditCommand(operation)` returns a standard ProseMirror command. Operations
@@ -76,6 +84,14 @@ editor.action((ctx) => {
 Invalid values or structurally impossible operations return `false` and leave
 the document unchanged.
 
+Ruby apply/update selects the atomic ruby node; removing ruby selects the
+restored base-text range. Ranged mark operations retain their text selection,
+while collapsed non-TCY marks use ordinary stored marks (TCY requires a valid
+one-to-six-character range). Break/block insertion and paragraph-layout
+commands use ProseMirror's normal mapped selection. Every dispatched command
+is a normal history transaction, so undo and redo restore both document and
+selection through ProseMirror rather than plugin-owned state.
+
 ## Opt-in input and clipboard
 
 Neither behavior is enabled by `mdi()`:
@@ -91,6 +107,10 @@ Input-rule candidates are confirmed through the official parser. Clipboard
 copy emits canonical MDI in `text/plain` and a versioned MDI MIME entry; paste
 uses semantic conversion only for explicit MDI data or recognized MDI syntax.
 Ordinary or unsupported content falls through to ProseMirror unchanged.
+Unsupported MDI source versions are rejected. If a clipboard implementation
+does not accept the custom MIME entry, copy still writes interoperable
+`text/plain`; missing, malformed, and unknown MIME entries stay on the native
+fallback path. Repeated plugin registration is deduplicated per editor context.
 
 For application-controlled flows, use `parseMdiClipboard()` and
 `serializeMdiClipboard()` directly.

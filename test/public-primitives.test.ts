@@ -60,21 +60,23 @@ describe('source/editor mapping primitives', () => {
   })
 
   it('maps source-backed table cells retained as literal Markdown', async () => {
-    const editor = await createEditor('| A | B |\n| - | - |\n| 1 | 2 |')
+    const editor = await createEditor('| A | B |\n| --- | --- |\n| 1 | 2 |')
     const snapshot = editor.action(createMdiEditorMapping())
     const header = mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, 'A'))
     const cell = mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, '1'))
     expect(header.matches).toHaveLength(1)
     expect(cell.matches).toHaveLength(1)
     expect(header.matches[0]!.from).toBeLessThan(cell.matches[0]!.from)
+    expect(snapshot.doc.textBetween(header.matches[0]!.from, header.matches[0]!.to)).toBe('A')
+    expect(snapshot.doc.textBetween(cell.matches[0]!.from, cell.matches[0]!.to)).toBe('1')
 
     const canonicalEditor = await createEditor('| X | Y |\n| --- | --- |\n| 3 | 4 |')
     const canonical = canonicalEditor.action(createMdiEditorMapping())
     expect(mapMdiSourceSpanToEditorRanges(canonical, byteSpan(canonical.source, 'X')).matches).toHaveLength(1)
   })
 
-  it('maps nested containers and code in canonical source order', async () => {
-    const editor = await createEditor('> quote\n>\n> second\n\n- first\n  - nested\n\n```txt\ncode\n```\n\n![image alt](x.png)')
+  it('maps nested containers and code from parse-bridge provenance', async () => {
+    const editor = await createEditor('> quote\n> second\n\n- first\n  - nested\n\n```txt\ncode\n```\n\n![image alt](x.png)')
     const snapshot = editor.action(createMdiEditorMapping())
     for (const value of ['quote', 'second', 'first', 'nested', 'code', 'image alt']) {
       const result = mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, value))
@@ -86,7 +88,7 @@ describe('source/editor mapping primitives', () => {
     expect(mapMdiSourceSpanToEditorRanges(
       nestedSnapshot,
       byteSpan(nestedSnapshot.source, 'quoted list'),
-    ).matches.length).toBeGreaterThanOrEqual(0)
+    ).matches).toHaveLength(1)
   })
 
   it('returns explicit unmapped and singular mapping results', async () => {
@@ -121,7 +123,8 @@ describe('source/editor mapping primitives', () => {
     const html = await createEditor('<div>HTML</div>')
     const snapshot = html.action(createMdiEditorMapping())
     const result = mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, 'HTML'))
-    expect(result).toMatchObject({ matches: [], reason: 'unmapped' })
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0]).toMatchObject({ channel: 'blockText', relation: 'exact' })
   })
 })
 

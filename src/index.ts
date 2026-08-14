@@ -1,21 +1,27 @@
-import { createSlice, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
+import { createSlice, createTimer, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
 import { serializeMdi } from '@illusions-lab/mdi'
 import remarkMdi from '@illusions-lab/mdi-remark'
-import { InitReady, remarkPluginsCtx } from '@milkdown/core'
+import { editorStateTimerCtx, InitReady, ParserReady, remarkPluginsCtx } from '@milkdown/core'
 import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { mdastToMdiSource } from 'mdast-util-mdi'
+import {
+  installMdiProvenanceParser,
+  type MdiBridgeData,
+  type MdiBridgeSegment,
+} from './provenance.js'
 
 export { initializeMdi } from '@illusions-lab/mdi'
 
 const KERN_AMOUNT = /^[+-]?\d+(?:\.\d+)?em$/
 const mdiFrontmatterCtx = createSlice<string | undefined>(undefined, 'mdiFrontmatter')
+const mdiProvenanceReady = createTimer('mdiProvenanceReady')
 
 interface PositionalMdastNode {
   type: string
   value?: string
   children?: PositionalMdastNode[]
-  data?: Record<string, unknown>
+  data?: Record<string, unknown> & MdiBridgeData
   position?: {
     start: { line: number; column: number; offset: number }
     end: { line: number; column: number; offset: number }
@@ -53,34 +59,165 @@ const SUPPORTED_MDAST_TYPES = new Set([
 
 const BLOCK_CONTAINERS = new Set(['root', 'blockquote', 'listItem'])
 
-const serializeFallback = (node: PositionalMdastNode): string => {
-  try {
-    return mdastToMdiSource({ type: 'root', children: [node] } as never).trimEnd()
-  } catch {
-    if (typeof node.value === 'string') return node.value
-    return node.children?.map(serializeFallback).join('') ?? ''
-  }
-}
-
 const needsLiteralFallback = (node: PositionalMdastNode) => {
   return !SUPPORTED_MDAST_TYPES.has(node.type)
 }
 
+const nodeProvenance = (node: PositionalMdastNode) => node.data?.mdiProvenance
+
+interface SourceOffsets {
+  slice: (fromByte: number, toByte: number) => string
+  utf16At: (byte: number) => number
+}
+
+const sourceOffsets = (tree: PositionalMdastNode, source: string): SourceOffsets => {
+  const requested = new Set([0])
+  const collect = (node: PositionalMdastNode) => {
+    const span = nodeProvenance(node)?.span
+    if (span) {
+      requested.add(span.startByte)
+      requested.add(span.endByte)
+    }
+    node.children?.forEach(collect)
+  }
+  collect(tree)
+  const resolved = new Map<number, number>([[0, 0]])
+  let byte = 0
+  let utf16 = 0
+  for (const character of source) {
+    const codePoint = character.codePointAt(0)!
+    byte += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
+    utf16 += character.length
+    if (requested.has(byte)) resolved.set(byte, utf16)
+  }
+  const utf16At = (offset: number) => {
+    const result = resolved.get(offset)
+    if (result === undefined) throw new RangeError(`Invalid Rust UTF-8 provenance boundary: ${offset}`)
+    return result
+  }
+  return {
+    utf16At,
+    slice: (fromByte, toByte) => source.slice(utf16At(fromByte), utf16At(toByte)),
+  }
+}
+
+const collectSourceBackedSegments = (
+  node: PositionalMdastNode,
+  offsets: SourceOffsets,
+  baseByte: number,
+): MdiBridgeSegment[] => {
+  const provenance = nodeProvenance(node)
+  const result = provenance?.role === 'textBearing'
+    && provenance.status === 'sourceBacked'
+    && provenance.span
+    && provenance.targets.length
+    ? [{
+        provenance,
+        from: offsets.utf16At(provenance.span.startByte) - offsets.utf16At(baseByte),
+        to: offsets.utf16At(provenance.span.endByte) - offsets.utf16At(baseByte),
+      }]
+    : []
+  return result.concat(node.children?.flatMap((child) =>
+    collectSourceBackedSegments(child, offsets, baseByte)) ?? [])
+}
+
 // Preserve genuinely unknown mdast extensions as editable literal text instead
 // of allowing one unsupported node to abort parsing of the entire document.
-const normalizeUnsupportedNodes = (parent: PositionalMdastNode) => {
+const normalizeUnsupportedNodes = (parent: PositionalMdastNode, offsets: SourceOffsets) => {
   if (!parent.children) return
   parent.children = parent.children.map((node) => {
     if (needsLiteralFallback(node)) {
-      const value = serializeFallback(node)
-      if (BLOCK_CONTAINERS.has(parent.type)) {
-        return { type: 'paragraph', children: [{ type: 'text', value }] }
+      const provenance = nodeProvenance(node)
+      let value: string
+      if (provenance?.span) {
+        value = offsets.slice(provenance.span.startByte, provenance.span.endByte)
+      } else {
+        try {
+          value = mdastToMdiSource({ type: 'root', children: [node] } as never).trimEnd()
+        } catch {
+          value = typeof node.value === 'string' ? node.value : ''
+        }
       }
-      return { type: 'text', value }
+      const mdiBridgeSegments = provenance?.span
+        ? collectSourceBackedSegments(node, offsets, provenance.span.startByte)
+        : []
+      const data = mdiBridgeSegments.length ? { mdiBridgeSegments } : undefined
+      if (BLOCK_CONTAINERS.has(parent.type)) {
+        return { type: 'paragraph', children: [{ type: 'text', value, data }] }
+      }
+      return { type: 'text', value, data }
     }
-    normalizeUnsupportedNodes(node)
+    normalizeUnsupportedNodes(node, offsets)
     return node
   })
+}
+
+const splitProvenanceLineBreaks = (tree: PositionalMdastNode) => {
+  const visit = (parent: PositionalMdastNode) => {
+    if (!parent.children) return
+    parent.children = parent.children.flatMap((node) => {
+      visit(node)
+      const provenance = nodeProvenance(node)
+      const bridgeSegments = node.data?.mdiBridgeSegments
+      if (node.type !== 'text' || typeof node.value !== 'string'
+        || !provenance && !bridgeSegments?.length) return [node]
+      const expression = /[\t ]*(?:\r?\n|\r)/g
+      const result: PositionalMdastNode[] = []
+      let start = 0
+      let startCharacter = 0
+      const segmentData = (from: number, to: number): MdiBridgeData => {
+        if (provenance) {
+          const length = graphemes(node.value!.slice(from, to)).length
+          return {
+            mdiProvenance: provenance,
+            mdiBridgeSegment: { startCharacter, endCharacter: startCharacter + length },
+          }
+        }
+        return {
+          mdiBridgeSegments: bridgeSegments!.flatMap((segment) => {
+            const segmentFrom = Math.max(from, segment.from)
+            const segmentTo = Math.min(to, segment.to)
+            if (segmentFrom >= segmentTo) return []
+            const offset = graphemes(node.value!.slice(segment.from, segmentFrom)).length
+            const length = graphemes(node.value!.slice(segmentFrom, segmentTo)).length
+            const base = segment.startCharacter ?? 0
+            return [{
+              ...segment,
+              from: segmentFrom - from,
+              to: segmentTo - from,
+              startCharacter: base + offset,
+              endCharacter: base + offset + length,
+            }]
+          }),
+        }
+      }
+      for (const match of node.value.matchAll(expression)) {
+        const position = match.index
+        if (start !== position) {
+          const value = node.value.slice(start, position)
+          const length = graphemes(value).length
+          result.push({ type: 'text', value, data: segmentData(start, position) })
+          startCharacter += length
+        }
+        const length = graphemes(match[0]).length
+        result.push({ type: 'break', data: {
+          ...segmentData(position, position + match[0].length),
+          isInline: true,
+        } })
+        startCharacter += length
+        start = position + match[0].length
+      }
+      if (!result.length) return [node]
+      if (start < node.value.length) {
+        const value = node.value.slice(start)
+        result.push({
+          type: 'text', value, data: segmentData(start, node.value.length),
+        })
+      }
+      return result
+    })
+  }
+  visit(tree)
 }
 
 const extractFrontmatter = (tree: PositionalMdastNode, ctx: Ctx) => {
@@ -99,24 +236,13 @@ interface VFileLike {
 }
 
 // Milkdown's CommonMark marker transformer reads source positions to retain
-// `*` versus `_`. Rust-backed mdast intentionally omits positions, so restore
-// only the marker offsets that transformer needs. Canonical MDI persistence
-// does not otherwise depend on source positions.
-const addCommonmarkMarkerPositions = (tree: PositionalMdastNode, source: string) => {
-  let cursor = 0
-
-  const markerOffset = (type: string) => {
-    const expression = type === 'strong' ? /\*\*|__/g : /(?<![*_])[*_](?![*_])/g
-    expression.lastIndex = cursor
-    const match = expression.exec(source)
-    if (!match) return 0
-    cursor = match.index + match[0].length
-    return match.index
-  }
-
+// `*` versus `_`. Convert the exact Rust UTF-8 provenance start to the UTF-16
+// offset Milkdown expects; never search the source or infer traversal order.
+const addCommonmarkMarkerPositions = (tree: PositionalMdastNode, offsets: SourceOffsets) => {
   const visit = (node: PositionalMdastNode) => {
     if (!node.position && (node.type === 'strong' || node.type === 'emphasis')) {
-      const offset = markerOffset(node.type)
+      const startByte = nodeProvenance(node)?.span?.startByte ?? 0
+      const offset = offsets.utf16At(startByte)
       node.position = {
         start: { line: 1, column: offset + 1, offset },
         end: { line: 1, column: offset + 1, offset },
@@ -132,9 +258,12 @@ const createRemarkMdiForMilkdown = (ctx: Ctx) => {
   return function remarkMdiForMilkdown(this: ThisParameterType<typeof remarkMdi>) {
     remarkMdi.call(this)
     return (tree: PositionalMdastNode, file: VFileLike) => {
+      const source = typeof file.value === 'string' ? file.value : ''
+      const offsets = sourceOffsets(tree, source)
       extractFrontmatter(tree, ctx)
-      normalizeUnsupportedNodes(tree)
-      addCommonmarkMarkerPositions(tree, typeof file.value === 'string' ? file.value : '')
+      normalizeUnsupportedNodes(tree, offsets)
+      splitProvenanceLineBreaks(tree)
+      addCommonmarkMarkerPositions(tree, offsets)
     }
   }
 }
@@ -563,6 +692,8 @@ const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
 
 const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
+  ctx.update(editorStateTimerCtx, (timers) => [...timers, mdiProvenanceReady])
+  ctx.record(mdiProvenanceReady)
   return async () => {
     await ctx.wait(InitReady)
     let entry: unknown
@@ -574,9 +705,13 @@ const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
       entry = nextEntry
       return [nextEntry, ...plugins]
     })
+    await ctx.wait(ParserReady)
+    installMdiProvenanceParser(ctx)
+    ctx.done(mdiProvenanceReady)
     return () => {
       ctx.update(remarkPluginsCtx, (plugins) => plugins.filter((plugin) => plugin !== entry))
       ctx.remove(mdiFrontmatterCtx)
+      ctx.clearTimer(mdiProvenanceReady)
     }
   }
 }
@@ -607,15 +742,18 @@ export function getMdi(): (ctx: Ctx) => string {
     const source = frontmatter === undefined
       ? body
       : `---\n${frontmatter}\n---\n\n${body}`
-    const canonical = serializeMdi(source)
-    const candidate = serializeMdi(canonical)
-    if (candidate === canonical) return canonical
-
+    const first = serializeMdi(source)
+    let candidate = first
     // Milkdown can expose formerly unsupported literal block syntax to MDI on
-    // the first pass (for example, a fallback table). Use a converged second
-    // pass, but keep the first canonical form if upstream cannot reach a fixed
-    // point for an unsupported construct.
-    return serializeMdi(candidate) === candidate ? candidate : canonical
+    // the first pass (for example, a fallback table). Let Rust converge such
+    // constructs through a small bounded number of canonical passes, but keep
+    // the first canonical form if an upstream serializer ever oscillates.
+    for (let pass = 0; pass < 8; pass += 1) {
+      const next = serializeMdi(candidate)
+      if (next === candidate) return candidate
+      candidate = next
+    }
+    return first
   }
 }
 
