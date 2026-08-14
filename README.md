@@ -86,8 +86,12 @@ application-specific file-extension logic. Use
 
 Source-coordinate consumers can create an immutable mapping snapshot with
 `createMdiEditorMapping()`. It binds Rust-owned UTF-8 spans and canonical
-grapheme ranges to the exact current ProseMirror document; after any document
-transaction, create a new snapshot instead of reusing stale positions.
+grapheme ranges to the exact current ProseMirror document through transient
+Rust mdast provenance captured by the parse bridge. Batch lookups use
+`mapMdiSourceSpansToEditorRanges()` and one Rust resolution pass. No editor-text,
+substring, DOM, or source-order association is used. After any editor-state
+transaction, including undo/redo, create a new snapshot instead of reusing
+stale positions.
 
 ## Development
 

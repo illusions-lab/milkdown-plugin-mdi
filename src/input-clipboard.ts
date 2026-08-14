@@ -16,8 +16,7 @@ const MDI_NODE_TYPES = new Set([
   'ruby', 'tcy', 'break', 'em', 'noBreak', 'warichu', 'kern', 'blank', 'pagebreak',
 ])
 
-const containsMdi = (source: string) => {
-  const result = parse(source)
+const containsMdi = (result: ReturnType<typeof parse>) => {
   const visit = (node: { type: string; children?: unknown[]; indent?: unknown; bottom?: unknown }): boolean => (
     MDI_NODE_TYPES.has(node.type)
     || typeof node.indent === 'number'
@@ -28,7 +27,9 @@ const containsMdi = (source: string) => {
 }
 
 const parsedSlice = (ctx: Ctx, source: string, options: MdiClipboardParseOptions = {}) => {
-  if (!options.explicit && !containsMdi(source)) return null
+  const result = parse(source)
+  if (result.diagnostics.some(({ code }) => code === 'mdi.version.unsupported')) return null
+  if (!options.explicit && !containsMdi(result)) return null
   const canonical = serializeMdi(source)
   const doc = ctx.get(parserCtx)(canonical)
   return new Slice(doc.content, 0, 0)
@@ -106,6 +107,11 @@ const blockRule = (ctx: Ctx) => new InputRule(
 
 /** Opt-in input rules. Recognition is confirmed by the official MDI parser. */
 export const mdiInputRules = (): MilkdownPlugin => (ctx) => {
+  const registered = inputRuleRegistrations.get(ctx)
+  if (registered) {
+    registered.references += 1
+    return () => () => releaseInputRules(ctx)
+  }
   const rules = [
     inlineRule(ctx, /(\{[^{}\n]*\|[^{}\n]*\})$/),
     inlineRule(ctx, /(\^[^^\n]+\^)$/),
@@ -113,12 +119,29 @@ export const mdiInputRules = (): MilkdownPlugin => (ctx) => {
     inlineRule(ctx, /(\[\[(?:br|em|no-break|warichu|kern)(?::[^\n]*)?\]\])$/),
     blockRule(ctx),
   ]
+  inputRuleRegistrations.set(ctx, { references: 1, rules })
   ctx.update(inputRulesCtx, (current) => [...current, ...rules])
-  return () => () => ctx.update(inputRulesCtx, (current) => current.filter((rule) => !rules.includes(rule)))
+  return () => () => releaseInputRules(ctx)
+}
+
+const inputRuleRegistrations = new WeakMap<Ctx, { references: number; rules: InputRule[] }>()
+
+const releaseInputRules = (ctx: Ctx) => {
+  const registered = inputRuleRegistrations.get(ctx)
+  if (!registered) return
+  registered.references -= 1
+  if (registered.references > 0) return
+  ctx.update(inputRulesCtx, (current) => current.filter((rule) => !registered.rules.includes(rule)))
+  inputRuleRegistrations.delete(ctx)
 }
 
 /** Opt-in same-editor/cross-editor MDI clipboard support with plain-text fallback. */
 export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
+  const registered = clipboardRegistrations.get(ctx)
+  if (registered) {
+    registered.references += 1
+    return () => () => releaseClipboard(ctx)
+  }
   const plugin = new Plugin({
     props: {
       clipboardTextSerializer: (slice) => serializeMdiClipboard(slice)(ctx) ?? slice.content.textBetween(0, slice.content.size, '\n'),
@@ -128,8 +151,20 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
           if (!clipboard || view.state.selection.empty) return false
           const source = serializeMdiClipboard(view.state.selection.content())(ctx)
           if (!source) return false
-          clipboard.setData(MDI_CLIPBOARD_MIME, source)
-          clipboard.setData('text/plain', source)
+          let written = false
+          try {
+            clipboard.setData(MDI_CLIPBOARD_MIME, source)
+            written = true
+          } catch {
+            // Some clipboard implementations reject non-standard MIME types.
+          }
+          try {
+            clipboard.setData('text/plain', source)
+            written = true
+          } catch {
+            // Return control to the native handler if no representation worked.
+          }
+          if (!written) return false
           event.preventDefault()
           return true
         },
@@ -137,8 +172,21 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
       handlePaste: (view, event) => {
         const clipboard = event.clipboardData
         if (!clipboard) return false
-        const explicitSource = clipboard.getData(MDI_CLIPBOARD_MIME)
-        const source = explicitSource || clipboard.getData('text/plain')
+        let explicitSource = ''
+        let plainSource = ''
+        try {
+          explicitSource = clipboard.getData(MDI_CLIPBOARD_MIME)
+        } catch {
+          // Fall through to interoperable text/plain.
+        }
+        if (!explicitSource) {
+          try {
+            plainSource = clipboard.getData('text/plain')
+          } catch {
+            return false
+          }
+        }
+        const source = explicitSource || plainSource
         if (!source) return false
         const slice = parseMdiClipboard(source, { explicit: Boolean(explicitSource) })(ctx)
         if (!slice) return false
@@ -147,6 +195,18 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
       },
     },
   })
+  clipboardRegistrations.set(ctx, { references: 1, plugin })
   ctx.update(prosePluginsCtx, (plugins) => [...plugins, plugin])
-  return () => () => ctx.update(prosePluginsCtx, (plugins) => plugins.filter((item) => item !== plugin))
+  return () => () => releaseClipboard(ctx)
+}
+
+const clipboardRegistrations = new WeakMap<Ctx, { references: number; plugin: Plugin }>()
+
+const releaseClipboard = (ctx: Ctx) => {
+  const registered = clipboardRegistrations.get(ctx)
+  if (!registered) return
+  registered.references -= 1
+  if (registered.references > 0) return
+  ctx.update(prosePluginsCtx, (plugins) => plugins.filter((item) => item !== registered.plugin))
+  clipboardRegistrations.delete(ctx)
 }

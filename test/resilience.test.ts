@@ -1,7 +1,7 @@
 import { editorStateCtx, editorViewCtx, schemaCtx } from '@milkdown/core'
 import { parse } from '@illusions-lab/mdi'
 import { DOMParser } from '@milkdown/prose/model'
-import { getHTML, getMarkdown } from '@milkdown/utils'
+import { getHTML, getMarkdown, $remark } from '@milkdown/utils'
 import { describe, expect, it } from 'vitest'
 import { getMdi, initializeMdi, mdi } from '../src/index'
 import { createEditor } from './harness'
@@ -86,6 +86,28 @@ describe('malformed inputs and deterministic fuzzing', () => {
     expect(boten.querySelector('.mdi-boten')?.getAttribute('style')).toBe("--mdi-boten-mark: '﹅';")
     expect(boten.querySelector('.mdi-kern')).toBeNull()
     expect(html).not.toContain('<script')
+  })
+
+  it('defaults invalid kern data introduced by another mdast transform', async () => {
+    const corruptKern = $remark('test-corrupt-kern', () => () => (tree: any) => {
+      const visit = (node: any) => {
+        if (node.type === 'mdiKern') node.amount = 'calc(1em)'
+        node.children?.forEach(visit)
+      }
+      visit(tree)
+    })
+    const editor = await createEditor('[[kern:-0.1em:字]]', [...corruptKern])
+    expect(editor.action(getMdi())).toContain('[[kern:0em:字]]')
+  })
+
+  it('accepts value-only paragraphs introduced by another mdast transform', async () => {
+    const valueOnlyParagraph = $remark('test-value-only-paragraph', () => () => (tree: any) => {
+      const paragraph = tree.children?.find((node: any) => node.type === 'paragraph')
+      paragraph.value = 'fallback paragraph'
+      delete paragraph.children
+    })
+    const editor = await createEditor('original', [...valueOnlyParagraph])
+    expect(editor.action((ctx) => ctx.get(editorStateCtx).doc.textContent)).toBe('fallback paragraph')
   })
 
   it('validates DOM attributes and schema attributes at the trust boundary', async () => {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 - 2026-08-14
+
+- Replace source/editor text and traversal heuristics with transient Rust-owned mdast provenance.
+- Add batch source-span mapping through one `resolveMdiSourceSpans()` call.
+- Reject every editor-state-stale mapping snapshot, including after undo/redo.
+- Complete typed editing acceptance and reject structurally impossible commands without mutation.
+- Complete opt-in input/clipboard families, MIME fallbacks, history, and duplicate-registration handling.
+
 ## 0.3.0 - 2026-08-13
 
 - Add exact-source MDI UTF-8 source-span to ProseMirror range mapping snapshots.

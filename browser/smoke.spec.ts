@@ -13,6 +13,8 @@ test('initializes WASM, creates Milkdown, and serializes inline and block MDI', 
   const smoke = await page.evaluate(() => window.__MDI_SMOKE__)
   expect(smoke?.error).toBeUndefined()
   expect(smoke?.ready).toBe(true)
+  expect(smoke?.mappingMatches).toBe(1)
+  expect(smoke?.clipboardParsed).toBe(true)
   expect(smoke?.serialized).toContain('title: MDI Editor Showroom')
   expect(smoke?.serialized).toContain('debug-fixture: editor-showroom')
   expect(smoke?.serialized).toContain('{東京|とうきょう}')
@@ -87,10 +89,48 @@ test('initializes WASM, creates Milkdown, and serializes inline and block MDI', 
   await expect(page.getByLabel('Canonical MDI output')).toContainText('{東京|とうきょう}')
 
   const lastParagraph = page.locator('#editor [contenteditable="true"] p').last()
+  const rubyCount = await page.locator('.mdi-ruby').count()
   await lastParagraph.click()
   await page.keyboard.press('End')
-  await page.keyboard.type(' browser-edit-ok')
+  await page.keyboard.type(' {字|じ} browser-edit-ok')
+  await expect(page.locator('.mdi-ruby')).toHaveCount(rubyCount + 1)
   await page.getByRole('button', { name: 'Serialize MDI' }).click()
+  await expect(page.getByLabel('Canonical MDI output')).toContainText('{字|じ}')
+  await expect(page.getByLabel('Canonical MDI output')).toContainText('browser-edit-ok')
+
+  const editable = page.locator('#editor [contenteditable="true"]')
+  await editable.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
+  const copied = await page.evaluate(() => {
+    const target = document.querySelector<HTMLElement>('#editor [contenteditable="true"]')!
+    const values = new Map<string, string>()
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: {
+      setData: (type: string, value: string) => values.set(type, value),
+    } })
+    target.dispatchEvent(event)
+    return {
+      prevented: event.defaultPrevented,
+      mdi: values.get('application/x-illusion-markdown;version=2.0') ?? '',
+      plain: values.get('text/plain') ?? '',
+    }
+  })
+  expect(copied.prevented).toBe(true)
+  expect(copied.plain).toContain('{字|じ}')
+  if (copied.mdi) expect(copied.mdi).toBe(copied.plain)
+  const pasted = await page.evaluate(({ mdi, plain }) => {
+    const target = document.querySelector<HTMLElement>('#editor [contenteditable="true"]')!
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: {
+      getData: (type: string) => type === 'application/x-illusion-markdown;version=2.0'
+        ? mdi
+        : type === 'text/plain' ? plain : '',
+    } })
+    target.dispatchEvent(event)
+    return event.defaultPrevented
+  }, copied)
+  expect(pasted).toBe(true)
+  await page.getByRole('button', { name: 'Serialize MDI' }).click()
+  await expect(page.getByLabel('Canonical MDI output')).toContainText('{字|じ}')
   await expect(page.getByLabel('Canonical MDI output')).toContainText('browser-edit-ok')
   expect(errors).toEqual([])
 })

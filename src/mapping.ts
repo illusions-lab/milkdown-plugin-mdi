@@ -1,18 +1,17 @@
 import {
   getMdiTextBlocks,
-  formatMdiTextPosition,
   parseMdiTextPosition,
-  resolveMdiSourceSpan,
-  sourceSpansForTextRange,
+  resolveMdiSourceSpans,
   type MdiSourceSpan,
   type MdiSourceSpanCoverage,
-  type MdiTextBlock,
   type MdiTextRange,
 } from '@illusions-lab/mdi'
 import type { Ctx } from '@milkdown/ctx'
-import { editorStateCtx } from '@milkdown/core'
+import { editorStateCtx, parserCtx } from '@milkdown/core'
 import type { Node as ProseNode } from '@milkdown/prose/model'
+import type { EditorState } from '@milkdown/prose/state'
 import { getMdi } from './index.js'
+import { getMdiDocumentProvenance, type MdiProvenanceRange } from './provenance.js'
 
 export interface MdiEditorRange {
   from: number
@@ -32,11 +31,6 @@ export interface MdiEditorRangeResolution {
   reason?: 'stale' | 'unmapped'
 }
 
-interface EditorBlock {
-  text: string
-  boundaries: Array<number | undefined>
-}
-
 /** An immutable association between one canonical MDI source and one PM doc. */
 export interface MdiEditorMappingSnapshot {
   readonly source: string
@@ -44,153 +38,66 @@ export interface MdiEditorMappingSnapshot {
   readonly projectionVersion: '1.0'
 }
 
-const snapshotProjection = new WeakMap<MdiEditorMappingSnapshot, MdiTextBlock[]>()
-const snapshotEditorBlocks = new WeakMap<MdiEditorMappingSnapshot, ReadonlyMap<number, EditorBlock>>()
+const snapshotRanges = new WeakMap<MdiEditorMappingSnapshot, readonly MdiProvenanceRange[]>()
+const snapshotStates = new WeakMap<MdiEditorMappingSnapshot, EditorState>()
 
-const graphemeSegments = (value: string) => {
-  if (typeof Intl.Segmenter === 'function') {
-    return [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(value)]
+const sameEditorShape = (left: ProseNode, right: ProseNode): boolean => {
+  if (left.type !== right.type || left.nodeSize !== right.nodeSize || left.childCount !== right.childCount) return false
+  for (let index = 0; index < left.childCount; index += 1) {
+    const leftChild = left.child(index)
+    const rightChild = right.child(index)
+    if (!sameEditorShape(leftChild, rightChild)) return false
   }
-  let index = 0
-  return Array.from(value, (segment) => {
-    const result = { segment, index }
-    index += segment.length
-    return result
+  return true
+}
+
+const containsRange = (outer: MdiTextRange, inner: MdiTextRange) => {
+  const start = parseMdiTextPosition(outer.start).character
+  const end = parseMdiTextPosition(outer.end).character
+  const innerStart = parseMdiTextPosition(inner.start).character
+  const innerEnd = parseMdiTextPosition(inner.end).character
+  return start <= innerStart && innerEnd <= end
+}
+
+const mappedRanges = (
+  ranges: readonly MdiProvenanceRange[],
+  match: { blockIndex: number; kind: 'blockText' | 'annotation'; annotationIndex?: number; range: MdiTextRange },
+) => {
+  const targetStart = parseMdiTextPosition(match.range.start).character
+  const targetEnd = parseMdiTextPosition(match.range.end).character
+  const candidates = ranges.filter(({ target, targetOffsetStart, targetOffsetEnd }) => {
+    if (target.blockIndex !== match.blockIndex
+      || target.channel !== match.kind
+      || match.kind === 'annotation' && (target.channel !== 'annotation'
+        || target.annotationIndex !== match.annotationIndex)
+      || !containsRange(target.range, match.range)) return false
+    const base = parseMdiTextPosition(target.range.start).character
+    const start = base + targetOffsetStart
+    const end = base + targetOffsetEnd
+    return targetStart === targetEnd
+      ? start <= targetStart && targetStart <= end
+      : start < targetEnd && targetStart < end
   })
+  const precise = candidates.filter(({ graphemeOffsets }) => graphemeOffsets)
+  return (precise.length ? precise : candidates)
+    .sort((left, right) => left.targetOffsetStart - right.targetOffsetStart)
 }
 
-const appendText = (target: EditorBlock, value: string, from: number, atomTo?: number) => {
-  for (const { segment, index } of graphemeSegments(value)) {
-    target.text += segment
-    target.boundaries.push(atomTo ?? from + index + segment.length)
+const editorRangeForMatch = (ranges: readonly MdiProvenanceRange[], matchRange: MdiTextRange): MdiEditorRange | null => {
+  const first = ranges[0]
+  const last = ranges.at(-1)
+  if (!first || !last) return null
+  const targetStart = parseMdiTextPosition(first.target.range.start).character
+  const matchStart = parseMdiTextPosition(matchRange.start).character - targetStart
+  const matchEnd = parseMdiTextPosition(matchRange.end).character - targetStart
+  const startOffset = first.graphemeOffsets?.[Math.max(0, matchStart - first.targetOffsetStart)]
+  const endOffset = last.graphemeOffsets?.[
+    Math.min(last.targetOffsetEnd - last.targetOffsetStart, matchEnd - last.targetOffsetStart)
+  ]
+  return {
+    from: startOffset === undefined ? first.from : first.from + startOffset,
+    to: endOffset === undefined ? last.to : last.from + endOffset,
   }
-}
-
-const inlineProjection = (node: ProseNode, start: number): EditorBlock => {
-  const result: EditorBlock = { text: '', boundaries: [start] }
-  node.descendants((child, pos) => {
-    const absolute = start + pos
-    if (child.isText) {
-      appendText(result, child.text ?? '', absolute)
-      return false
-    }
-    if (child.type.name === 'mdiRuby') {
-      appendText(result, String(child.attrs.base), absolute, absolute + child.nodeSize)
-      return false
-    }
-    if (child.type.name === 'mdiBreak' || child.type.name === 'hardbreak') {
-      appendText(result, '\n', absolute, absolute + child.nodeSize)
-      return false
-    }
-    if (child.type.name === 'image') {
-      appendText(result, String(child.attrs.alt ?? ''), absolute, absolute + child.nodeSize)
-      return false
-    }
-    return true
-  })
-  return result
-}
-
-const appendBlock = (target: EditorBlock, block: EditorBlock) => {
-  if (!block.text) return
-  if (target.text) {
-    target.text += '\n'
-    target.boundaries.push(block.boundaries[0] ?? target.boundaries.at(-1) ?? 0)
-  }
-  target.text += block.text
-  target.boundaries.push(...block.boundaries.slice(1))
-}
-
-const containerProjection = (node: ProseNode, start: number, skipNestedLists = false) => {
-  const result: EditorBlock = { text: '', boundaries: [start] }
-  node.forEach((child, offset) => {
-    if (skipNestedLists && (child.type.name === 'bullet_list' || child.type.name === 'ordered_list')) return
-    if (child.type.name === 'paragraph' || child.type.name === 'heading' || child.type.name === 'code_block') {
-      appendBlock(result, inlineProjection(child, start + offset + 1))
-    } else if (!child.isLeaf) {
-      appendBlock(result, containerProjection(child, start + offset + 1, skipNestedLists))
-    }
-  })
-  return result
-}
-
-const editorBlocks = (doc: ProseNode): EditorBlock[] => {
-  const blocks: EditorBlock[] = []
-  const visit = (node: ProseNode, start: number, insideOwnedContainer = false) => {
-    node.forEach((child, offset) => {
-      const pos = start + offset
-      const name = child.type.name
-      if (name === 'blockquote') {
-        blocks.push(containerProjection(child, pos + 1))
-        visit(child, pos + 1, true)
-        return
-      }
-      if (name === 'list_item') {
-        blocks.push(containerProjection(child, pos + 1, true))
-        visit(child, pos + 1, true)
-        return
-      }
-      if (!insideOwnedContainer && (name === 'heading' || name === 'paragraph' || name === 'code_block')) {
-        blocks.push(inlineProjection(child, pos + 1))
-      }
-      if (!child.isLeaf) visit(child, pos + 1, insideOwnedContainer)
-    })
-  }
-  visit(doc, 0)
-  return blocks
-}
-
-const utf8Slice = (source: string, from: number, to: number) => new TextDecoder().decode(
-  new TextEncoder().encode(source).subarray(from, to),
-)
-
-const literalProjection = (source: string, block: MdiTextBlock, candidate: EditorBlock): EditorBlock | null => {
-  if (!block.span) return null
-  const literal = utf8Slice(source, block.span.startByte, block.span.endByte)
-  const exactLiteral = literal === candidate.text || literal.trimEnd() === candidate.text
-  if (!exactLiteral && !['table', 'footnote', 'html', 'other'].includes(block.kind)) return null
-  const start = candidate.boundaries[0]
-  if (start === undefined) return null
-  const boundaries: Array<number | undefined> = Array(graphemeSegments(block.text).length + 1)
-  let candidateCursor = 0
-  for (let index = 0; index < boundaries.length - 1; index += 1) {
-    const spans = sourceSpansForTextRange(block, {
-      start: formatMdiTextPosition({ block: block.index, character: index + 1 }),
-      end: formatMdiTextPosition({ block: block.index, character: index + 2 }),
-    })
-    if (spans.length !== 1) continue
-    const [span] = spans
-    if (exactLiteral) {
-      boundaries[index] = start + utf8Slice(source, block.span.startByte, span!.startByte).length
-      boundaries[index + 1] = start + utf8Slice(source, block.span.startByte, span!.endByte).length
-      continue
-    }
-    const segment = graphemeSegments(block.text)[index]?.segment
-    if (!segment) continue
-    const found = candidate.text.indexOf(segment, candidateCursor)
-    if (found < 0) return null
-    boundaries[index] = start + found
-    boundaries[index + 1] = start + found + segment.length
-    candidateCursor = found + segment.length
-  }
-  return { text: block.text, boundaries }
-}
-
-const associateBlocks = (source: string, sourceBlocks: MdiTextBlock[], candidates: EditorBlock[]) => {
-  const result = new Map<number, EditorBlock>()
-  let cursor = 0
-  for (const block of sourceBlocks) {
-    for (let index = cursor; index < candidates.length; index += 1) {
-      const candidate = candidates[index]
-      if (!candidate) continue
-      const associated = candidate.text === block.text ? candidate : literalProjection(source, block, candidate)
-      if (!associated) continue
-      result.set(block.index, associated)
-      cursor = index + 1
-      break
-    }
-  }
-  return result
 }
 
 export const createMdiEditorMapping = () => (ctx: Ctx): MdiEditorMappingSnapshot => {
@@ -202,59 +109,67 @@ export const createMdiEditorMapping = () => (ctx: Ctx): MdiEditorMappingSnapshot
     doc: state.doc,
     projectionVersion: projection.projectionVersion,
   })
-  snapshotProjection.set(snapshot, projection.blocks)
-  snapshotEditorBlocks.set(snapshot, associateBlocks(source, projection.blocks, editorBlocks(state.doc)))
+  // The initial Milkdown value may be non-canonical. Rebuild only the bridge
+  // document from the snapshot's canonical source so Rust block indices and
+  // provenance targets belong to the exact source exposed by this API.
+  const canonicalDoc = ctx.get(parserCtx)(source)
+  snapshotRanges.set(snapshot, sameEditorShape(canonicalDoc, state.doc)
+    ? getMdiDocumentProvenance(canonicalDoc) ?? []
+    : [])
+  snapshotStates.set(snapshot, state)
   return snapshot
 }
 
 export const isCurrentMdiEditorMapping = (snapshot: MdiEditorMappingSnapshot) =>
-  (ctx: Ctx) => snapshot.doc.eq(ctx.get(editorStateCtx).doc) && snapshot.source === getMdi()(ctx)
+  (ctx: Ctx) => snapshotStates.get(snapshot) === ctx.get(editorStateCtx)
+    && snapshot.source === getMdi()(ctx)
 
-const mapTextRange = (block: EditorBlock | undefined, range: MdiTextRange): MdiEditorRange | null => {
-  if (!block) return null
-  const start = parseMdiTextPosition(range.start).character - 1
-  const end = parseMdiTextPosition(range.end).character - 1
-  const from = block.boundaries[start]
-  const to = block.boundaries[end]
-  return from === undefined || to === undefined ? null : { from, to }
+/**
+ * Resolve all spans in one Rust parse/projection, then join results only to
+ * ranges captured from matching Rust mdast provenance during document build.
+ */
+export const mapMdiSourceSpansToEditorRanges = (
+  snapshot: MdiEditorMappingSnapshot,
+  spans: readonly MdiSourceSpan[],
+  current?: { source: string; doc: ProseNode },
+): MdiEditorRangeResolution[] => {
+  if (current && (current.source !== snapshot.source || !current.doc.eq(snapshot.doc))) {
+    return spans.map(() => ({ coverage: 'none', matches: [], reason: 'stale' as const }))
+  }
+  const ranges = snapshotRanges.get(snapshot) ?? []
+  return resolveMdiSourceSpans(snapshot.source, spans).map((resolution) => {
+    const matches = resolution.matches.flatMap((match): MdiEditorRangeMatch[] => {
+      const provenanceRanges = mappedRanges(ranges, match)
+      const range = editorRangeForMatch(provenanceRanges, match.range)
+      return range ? [{
+        ...range,
+        blockIndex: match.blockIndex,
+        channel: match.kind,
+        ...(match.kind === 'annotation' ? { annotationIndex: match.annotationIndex } : {}),
+        relation: match.relation,
+      }] : []
+    })
+    return {
+      coverage: resolution.coverage,
+      matches,
+      ...(matches.length ? {} : { reason: 'unmapped' as const }),
+    }
+  })
 }
 
 export const mapMdiSourceSpanToEditorRanges = (
   snapshot: MdiEditorMappingSnapshot,
   span: MdiSourceSpan,
   current?: { source: string; doc: ProseNode },
-): MdiEditorRangeResolution => {
-  if (current && (current.source !== snapshot.source || !current.doc.eq(snapshot.doc))) {
-    return { coverage: 'none', matches: [], reason: 'stale' }
-  }
-  const resolution = resolveMdiSourceSpan(snapshot.source, span)
-  const matches = resolution.matches.flatMap((match): MdiEditorRangeMatch[] => {
-    const range = mapTextRange(snapshotEditorBlocks.get(snapshot)?.get(match.blockIndex), match.kind === 'annotation'
-      ? snapshotProjection.get(snapshot)?.[match.blockIndex - 1]?.annotations[match.annotationIndex]?.anchor ?? match.range
-      : match.range)
-    return range ? [{
-      ...range,
-      blockIndex: match.blockIndex,
-      channel: match.kind,
-      ...(match.kind === 'annotation' ? { annotationIndex: match.annotationIndex } : {}),
-      relation: match.relation,
-    }] : []
-  })
-  return {
-    coverage: resolution.coverage,
-    matches,
-    ...(matches.length ? {} : { reason: 'unmapped' as const }),
-  }
-}
+): MdiEditorRangeResolution => mapMdiSourceSpansToEditorRanges(snapshot, [span], current)[0]!
 
 /** Map only when the snapshot still belongs to the editor's exact current state. */
 export const mapMdiSourceSpanToCurrentEditorRanges = (
   snapshot: MdiEditorMappingSnapshot,
   span: MdiSourceSpan,
-) => (ctx: Ctx): MdiEditorRangeResolution => mapMdiSourceSpanToEditorRanges(snapshot, span, {
-  source: getMdi()(ctx),
-  doc: ctx.get(editorStateCtx).doc,
-})
+) => (ctx: Ctx): MdiEditorRangeResolution => isCurrentMdiEditorMapping(snapshot)(ctx)
+  ? mapMdiSourceSpanToEditorRanges(snapshot, span)
+  : { coverage: 'none', matches: [], reason: 'stale' }
 
 export const mapMdiSourceSpanToEditorRange = (
   snapshot: MdiEditorMappingSnapshot,

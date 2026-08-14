@@ -37,7 +37,8 @@ const markAttrs = (mark: MdiInlineMark, value?: string) => {
 }
 
 const paragraphPosition = (state: EditorState) => {
-  const { $from } = state.selection
+  const { $from, $to } = state.selection
+  if (!$from.sameParent($to)) return null
   for (let depth = $from.depth; depth > 0; depth -= 1) {
     if ($from.node(depth).type.name === 'paragraph') {
       return { node: $from.node(depth), pos: $from.before(depth) }
@@ -54,10 +55,14 @@ const selectedRuby = (state: EditorState) => {
 }
 
 const selectedPlainText = (state: EditorState) => {
-  const { from, to, empty } = state.selection
-  if (empty) return null
+  const { from, to, empty, $from, $to } = state.selection
+  if (empty || !$from.sameParent($to) || !$from.parent.inlineContent) return null
   const slice = state.doc.slice(from, to)
-  if (slice.content.childCount !== 1 && slice.content.size !== slice.content.textBetween(0, slice.content.size).length) return null
+  let onlyText = true
+  slice.content.descendants((node) => {
+    if (!node.isText) onlyText = false
+  })
+  if (!onlyText) return null
   const text = state.doc.textBetween(from, to, '', '')
   return text || null
 }
@@ -83,9 +88,15 @@ const setRuby = (reading: MdiRubyReading): Command => (state, dispatch) => {
   } catch {
     return false
   }
-  if (!dispatch) return true
   const { from, to } = state.selection
-  const tr = state.tr.replaceWith(from, to, node)
+  let tr
+  try {
+    tr = state.tr.replaceWith(from, to, node)
+  } catch {
+    return false
+  }
+  if (!tr.docChanged) return false
+  if (!dispatch) return true
   tr.setSelection(NodeSelection.create(tr.doc, from))
   dispatch(tr.scrollIntoView())
   return true
@@ -119,9 +130,20 @@ const setInlineMark = (mark: MdiInlineMark, value?: string): Command => (state, 
     return false
   }
   const { from, to, empty } = state.selection
+  if (state.selection instanceof NodeSelection) return false
   const text = empty ? '' : state.doc.textBetween(from, to, '', '')
   if (mark === 'tcy' && (!text || !/^[0-9A-Za-z!?]{1,6}$/.test(text))) return false
-  if (!empty && from === to) return false
+  if (empty && !state.selection.$from.parent.type.allowsMarkType(type)) return false
+  if (!empty) {
+    let hasText = false
+    let allowed = true
+    state.doc.nodesBetween(from, to, (node, _pos, parent) => {
+      if (!node.isText) return
+      hasText = true
+      if (!parent?.type.allowsMarkType(type)) allowed = false
+    })
+    if (!hasText || !allowed) return false
+  }
   if (!dispatch) return true
   const tr = empty ? state.tr.addStoredMark(instance) : state.tr.addMark(from, to, instance)
   dispatch(tr.scrollIntoView())
@@ -145,14 +167,28 @@ const removeInlineMark = (mark: MdiInlineMark): Command => (state, dispatch) => 
 const insertNode = (name: string, attrs?: Record<string, unknown>): Command => (state, dispatch) => {
   const type = state.schema.nodes[name]
   if (!type) return false
+  const { $from, $to } = state.selection
+  if (name === 'mdiBreak') {
+    if (!$from.sameParent($to) || !$from.parent.inlineContent
+      || !$from.parent.canReplaceWith($from.index(), $to.index(), type)) return false
+  } else if ($from.parent.type.name !== 'paragraph' || state.selection instanceof NodeSelection) {
+    return false
+  }
   let node
   try {
     node = type.create(attrs)
   } catch {
     return false
   }
+  let tr
+  try {
+    tr = state.tr.replaceSelectionWith(node)
+  } catch {
+    return false
+  }
+  if (!tr.docChanged) return false
   if (!dispatch) return true
-  dispatch(state.tr.replaceSelectionWith(node).scrollIntoView())
+  dispatch(tr.scrollIntoView())
   return true
 }
 
@@ -167,6 +203,8 @@ const setParagraphLayout = (layout: 'indent' | 'bottom', value?: number): Comman
       mdiIndent: layout === 'indent' ? normalized : null,
       mdiBottom: layout === 'bottom' ? normalized : null,
     }
+    if (target.node.attrs.mdiIndent === attrs.mdiIndent
+      && target.node.attrs.mdiBottom === attrs.mdiBottom) return false
     if (!dispatch) return true
     dispatch(state.tr.setNodeMarkup(target.pos, undefined, attrs).scrollIntoView())
     return true

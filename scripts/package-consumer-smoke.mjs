@@ -81,6 +81,8 @@ const browserSmoke = async () => {
         || !result.projectionHasSourceMap
         || !result.projectionHasRubyAnnotation
         || !result.projectionDeterministic
+        || result.mappedRubyMatches !== 1
+        || !result.clipboardParsed
         || result.blockJson !== JSON.stringify([
           { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null } },
           { type: 'paragraph', attrs: { mdiIndent: 2, mdiBottom: null } },
@@ -116,15 +118,17 @@ try {
       mdiClipboard,
       mdiEditCommand,
       mdiInputRules,
+      mapMdiSourceSpansToEditorRanges,
     } from '@illusions-lab/milkdown-plugin-mdi'
     const plugins: MilkdownPlugin[] = mdi()
     const optionalPlugins: MilkdownPlugin[] = [mdiInputRules(), mdiClipboard()]
     const command: Command = mdiEditCommand({ type: 'insertBlank' })
     const action: (ctx: Ctx) => string = getMdi()
     const mappingAction = createMdiEditorMapping()
+    const batchMapping = mapMdiSourceSpansToEditorRanges
     const initialized: Promise<void> = initializeMdi()
     const projection: MdiTextBlocksResult = getMdiTextBlocks('# typed consumer')
-    void [plugins, optionalPlugins, command, action, mappingAction, initialized, projection]
+    void [plugins, optionalPlugins, command, action, mappingAction, batchMapping, initialized, projection]
   `)
   writeFileSync(join(work, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -142,12 +146,13 @@ try {
   execFileSync(process.execPath, ['--input-type=module', '--eval', `
     import {
       createMdiEditorMapping, initializeMdi, mdi, mdiClipboard,
-      mdiEditCommand, mdiInputRules, getMdi,
+      mdiEditCommand, mdiInputRules, mapMdiSourceSpansToEditorRanges, getMdi,
     } from '@illusions-lab/milkdown-plugin-mdi'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
     if (
       typeof initializeMdi !== 'function' || !Array.isArray(mdi()) || typeof getMdi !== 'function'
       || typeof createMdiEditorMapping !== 'function' || typeof mdiEditCommand !== 'function'
+      || typeof mapMdiSourceSpansToEditorRanges !== 'function'
       || typeof mdiInputRules() !== 'function' || typeof mdiClipboard() !== 'function'
     ) process.exit(1)
     if ([getMdiTextBlocks, parse, renderText, serializeMdi].some((value) => typeof value !== 'function')) process.exit(1)
@@ -157,7 +162,10 @@ try {
     import { Editor, defaultValueCtx, editorStateCtx, rootCtx } from '@milkdown/core'
     import { commonmark } from '@milkdown/preset-commonmark'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
-    import { initializeMdi, mdi, getMdi } from '@illusions-lab/milkdown-plugin-mdi'
+    import {
+      createMdiEditorMapping, initializeMdi, mapMdiSourceSpansToEditorRanges,
+      mdi, mdiClipboard, mdiInputRules, parseMdiClipboard, getMdi,
+    } from '@illusions-lab/milkdown-plugin-mdi'
     import '@illusions-lab/milkdown-plugin-mdi/style.css'
     const start = async () => {
       await initializeMdi()
@@ -169,12 +177,20 @@ try {
         '[[pagebreak:right]]', '',
         '[[blank]]',
       ].join('\\n')
-      const editor = Editor.make().config((ctx) => { ctx.set(rootCtx, '#editor'); ctx.set(defaultValueCtx, initial) }).use(commonmark).use(mdi())
+      const editor = Editor.make().config((ctx) => { ctx.set(rootCtx, '#editor'); ctx.set(defaultValueCtx, initial) }).use(commonmark).use(mdi()).use([mdiInputRules(), mdiClipboard()])
       await editor.create()
       const serialized = editor.action(getMdi())
       const parsed = parse(serialized)
       const projection = getMdiTextBlocks(serialized)
       const repeatedProjection = getMdiTextBlocks(serialized)
+      const rubyOffset = serialized.indexOf('東京')
+      const rubyStartByte = new TextEncoder().encode(serialized.slice(0, rubyOffset)).length
+      const mapping = editor.action(createMdiEditorMapping())
+      const mappedRuby = mapMdiSourceSpansToEditorRanges(mapping, [{
+        startByte: rubyStartByte,
+        endByte: rubyStartByte + new TextEncoder().encode('東京').length,
+      }])[0]
+      const clipboardParsed = editor.action(parseMdiClipboard('{字|じ}', { explicit: true }))
       const blockJson = editor.action((ctx) => JSON.stringify(
         ctx.get(editorStateCtx).doc.toJSON().content.map(({ type, attrs }) => ({
           type,
@@ -193,6 +209,8 @@ try {
         projectionHasSourceMap: projection.blocks[0]?.sourceMap.runs.length > 0,
         projectionHasRubyAnnotation: projection.blocks[0]?.annotations[0]?.text === 'とうきょう',
         projectionDeterministic: JSON.stringify(projection) === JSON.stringify(repeatedProjection),
+        mappedRubyMatches: mappedRuby.matches.length,
+        clipboardParsed: clipboardParsed !== null,
         blockJson,
       }
     }
