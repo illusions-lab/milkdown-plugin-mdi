@@ -21,9 +21,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # The self-hosted runner provides its OS browser dependencies. Download
-      # only the project browsers so this step does not require sudo access.
-      - run: npx playwright install chromium firefox webkit
+      # Ubicloud runners are ephemeral. Install both browser binaries and the
+      # WebKit system libraries needed for the cross-browser suite.
+      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build
