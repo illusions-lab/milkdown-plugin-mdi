@@ -16,9 +16,10 @@ permissions:
 
 jobs:
   publish:
-    # Publishing requires the Linux runner because the release checks use
-    # Playwright's Linux dependencies and npm trusted publishing.
-    runs-on: [self-hosted, Linux, X64]
+    # npm accepts GitHub Actions provenance only from GitHub-hosted runners.
+    # PR and main verification remains on the self-hosted Linux runner; this
+    # release job is the narrowly scoped trusted-publishing exception.
+    runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
     steps:
