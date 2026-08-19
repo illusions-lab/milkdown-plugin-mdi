@@ -139,6 +139,33 @@ describe('Rust-provenance editor mapping', () => {
     }
   })
 
+  it('keeps initial compact GFM table syntax source-backed after canonicalization', async () => {
+    const source = [
+      '---',
+      'mdi: "2.0"',
+      '---',
+      '',
+      '# 見出し',
+      '',
+      '本文',
+      '',
+      '|列|値|',
+      '|---|---|',
+      '|a|b|',
+      '',
+      '## 後続',
+      '',
+      '末尾',
+    ].join('\n')
+    const editor = await createEditor(source)
+    const snapshot = editor.action(createMdiEditorMapping())
+
+    for (const value of ['見出し', '本文', '列', '後続', '末尾']) {
+      expect(mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, value)).matches, value)
+        .toHaveLength(1)
+    }
+  })
+
   it('documents blank, pagebreak, indent, and bottom as structural/unmapped', async () => {
     const editor = await createEditor([
       '[[blank]]',
