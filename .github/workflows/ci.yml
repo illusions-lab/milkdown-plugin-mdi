@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Use the organization's Linux runner explicitly.  `self-hosted` alone
+    # could select the Windows runner, which cannot run this shell workflow.
+    runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

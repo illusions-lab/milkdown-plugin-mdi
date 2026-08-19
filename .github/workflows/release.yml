@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Publishing requires the Linux runner because the release checks use
+    # Playwright's Linux dependencies and npm trusted publishing.
+    runs-on: [self-hosted, Linux, X64]
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
     steps:
