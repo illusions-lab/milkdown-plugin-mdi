@@ -73,10 +73,12 @@ test('initializes WASM, creates Milkdown, and serializes inline and block MDI', 
   await expect(page.locator('.milkdown-vertical-writing')).toHaveAttribute('data-writing-mode', 'vertical-rl')
   const verticalStyles = await page.evaluate(() => ({
     tcy: getComputedStyle(document.querySelector('.mdi-tcy')!).getPropertyValue('text-combine-upright'),
+    tcyDisplay: getComputedStyle(document.querySelector('.mdi-tcy')!).display,
     noBreak: getComputedStyle(document.querySelector('.mdi-no-break')!).whiteSpace,
     kern: getComputedStyle(document.querySelector('.mdi-kern')!).letterSpacing,
   }))
   expect(verticalStyles.tcy).toBe('all')
+  expect(verticalStyles.tcyDisplay).toBe('inline')
   expect(verticalStyles.noBreak).toBe('nowrap')
   expect(verticalStyles.kern).not.toBe('normal')
 

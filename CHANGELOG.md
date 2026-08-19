@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 - 2026-08-19
+
+- Keep tate-chu-yoko as a native inline box so vertical writing does not create an empty line-sized gap before the combined glyphs.
+
 ## 0.4.1 - 2026-08-19
 
 - Canonicalize the initial MDI source before the provenance parser is installed, so source-coordinate mappings remain available for documents with compact GFM table syntax.
