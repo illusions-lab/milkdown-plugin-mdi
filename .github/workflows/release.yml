@@ -17,7 +17,7 @@ permissions:
 jobs:
   publish:
     # npm accepts GitHub Actions provenance only from GitHub-hosted runners.
-    # PR and main verification remains on the self-hosted Linux runner; this
+    # PR and main verification remains on Ubicloud; this
     # release job is the narrowly scoped trusted-publishing exception.
     runs-on: ubuntu-latest
     env:

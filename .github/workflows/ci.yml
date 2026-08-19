@@ -12,9 +12,8 @@ jobs:
   verify:
     # A public fork must not execute untrusted code on the self-hosted runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Use the organization's Linux runner explicitly.  `self-hosted` alone
-    # could select the Windows runner, which cannot run this shell workflow.
-    runs-on: [self-hosted, Linux, X64]
+    # Ephemeral Ubuntu 24.04 x64 runner supplied by the Ubicloud GitHub App.
+    runs-on: ubicloud-standard-2
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
