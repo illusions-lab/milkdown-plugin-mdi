@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1 - 2026-08-19
+
+- Canonicalize the initial MDI source before the provenance parser is installed, so source-coordinate mappings remain available for documents with compact GFM table syntax.
+
 ## 0.4.0 - 2026-08-14
 
 - Replace source/editor text and traversal heuristics with transient Rust-owned mdast provenance.

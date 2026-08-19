@@ -1,7 +1,7 @@
 import { createSlice, createTimer, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
 import { serializeMdi } from '@illusions-lab/mdi'
 import remarkMdi from '@illusions-lab/mdi-remark'
-import { editorStateTimerCtx, InitReady, ParserReady, remarkPluginsCtx } from '@milkdown/core'
+import { defaultValueCtx, editorStateTimerCtx, InitReady, ParserReady, remarkPluginsCtx } from '@milkdown/core'
 import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { mdastToMdiSource } from 'mdast-util-mdi'
@@ -696,6 +696,10 @@ const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.record(mdiProvenanceReady)
   return async () => {
     await ctx.wait(InitReady)
+    // The initial document is parsed only once. Canonicalize it before the
+    // provenance parser is installed so its document shape and the later
+    // source-coordinate snapshot always describe the same MDI source.
+    ctx.update(defaultValueCtx, (source) => typeof source === 'string' ? serializeMdi(source) : source)
     let entry: unknown
     ctx.update(remarkPluginsCtx, (plugins) => {
       const nextEntry = {
