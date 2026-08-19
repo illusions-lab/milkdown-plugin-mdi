@@ -44,20 +44,11 @@ jobs:
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
-      # This is a GitHub-hosted runner, required for npm provenance. Install
-      # the browser system dependencies here; self-hosted CI stays sudo-free.
-      - run: npx playwright install --with-deps chromium firefox webkit
-      - name: Verify an unpublished release
-        if: steps.registry.outputs.published == 'false'
-        run: npm run release:check
-      - name: Verify an existing release
-        if: steps.registry.outputs.published == 'true'
-        run: |
-          npm run test:release
-          npm run test:browser:all
-          PLAYWRIGHT_BROWSERS=all npm run test:consumer
-          npm run docs:build
-          npm pack --dry-run --json --ignore-scripts
+      # The complete release suite runs on the self-hosted Linux Verify job
+      # before a release is created. Keep this GitHub-hosted job limited to
+      # validating the exact tag's package and producing npm provenance.
+      - name: Check the package contents
+        run: npm pack --dry-run --json --ignore-scripts
       - name: Publish with npm trusted publishing
         if: steps.registry.outputs.published == 'false'
         # Do not allow a repository-level NODE_AUTH_TOKEN to override npm's
