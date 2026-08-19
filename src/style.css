@@ -8,9 +8,11 @@
 }
 
 .mdi-tcy {
-  display: inline-block;
-  line-height: 1;
-  text-align: center;
+  /*
+   * text-combine-upright needs to participate in the surrounding inline line
+   * box.  An inline-block establishes its own line box in vertical writing,
+   * which leaves a visible gap before the combined glyphs.
+   */
   text-combine-upright: all;
 }
 
