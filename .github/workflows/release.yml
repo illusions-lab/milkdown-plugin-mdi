@@ -44,9 +44,9 @@ jobs:
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
           fi
-      # The self-hosted runner provides its OS browser dependencies. Download
-      # only the project browsers so this step does not require sudo access.
-      - run: npx playwright install chromium firefox webkit
+      # This is a GitHub-hosted runner, required for npm provenance. Install
+      # the browser system dependencies here; self-hosted CI stays sudo-free.
+      - run: npx playwright install --with-deps chromium firefox webkit
       - name: Verify an unpublished release
         if: steps.registry.outputs.published == 'false'
         run: npm run release:check
