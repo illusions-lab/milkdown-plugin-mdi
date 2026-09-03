@@ -1,6 +1,6 @@
 {
   "name": "@illusions-lab/milkdown-plugin-mdi",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "MDI syntax support for Milkdown",
   "keywords": [
     "milkdown",

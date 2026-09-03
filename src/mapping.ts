@@ -38,8 +38,38 @@ export interface MdiEditorMappingSnapshot {
   readonly projectionVersion: '1.0'
 }
 
-const snapshotRanges = new WeakMap<MdiEditorMappingSnapshot, readonly MdiProvenanceRange[]>()
+type ProvenanceRangeIndex = ReadonlyMap<string, readonly MdiProvenanceRange[]>
+const snapshotRangeIndexes = new WeakMap<MdiEditorMappingSnapshot, ProvenanceRangeIndex>()
 const snapshotStates = new WeakMap<MdiEditorMappingSnapshot, EditorState>()
+
+const provenanceBucketKey = (blockIndex: number, channel: 'blockText' | 'annotation', annotationIndex?: number) =>
+  channel === 'annotation' ? `${blockIndex}:annotation:${annotationIndex ?? -1}` : `${blockIndex}:blockText`
+
+/** Build once per immutable snapshot so each resolved source match only visits
+ * provenance emitted for its own Rust block/channel identity. This module is
+ * internal to the package; the root export intentionally remains unchanged. */
+export const buildMdiProvenanceRangeIndex = (ranges: readonly MdiProvenanceRange[]): ProvenanceRangeIndex => {
+  const mutable = new Map<string, MdiProvenanceRange[]>()
+  for (const range of ranges) {
+    const { target } = range
+    const key = provenanceBucketKey(
+      target.blockIndex,
+      target.channel,
+      target.channel === 'annotation' ? target.annotationIndex : undefined,
+    )
+    const bucket = mutable.get(key)
+    if (bucket) bucket.push(range)
+    else mutable.set(key, [range])
+  }
+  for (const bucket of mutable.values()) {
+    bucket.sort((left, right) => {
+      const leftStart = parseMdiTextPosition(left.target.range.start).character + left.targetOffsetStart
+      const rightStart = parseMdiTextPosition(right.target.range.start).character + right.targetOffsetStart
+      return leftStart - rightStart
+    })
+  }
+  return mutable
+}
 
 const sameEditorShape = (left: ProseNode, right: ProseNode): boolean => {
   if (left.type !== right.type || left.nodeSize !== right.nodeSize || left.childCount !== right.childCount) return false
@@ -79,16 +109,18 @@ const hasCanonicalEditorShape = (
 }
 
 const mappedRanges = (
-  ranges: readonly MdiProvenanceRange[],
-  match: { blockIndex: number; kind: 'blockText' | 'annotation'; annotationIndex?: number; range: MdiTextRange },
+  index: ProvenanceRangeIndex,
+  match: {
+    blockIndex: number
+    kind: 'blockText' | 'annotation'
+    annotationIndex?: number
+    range: MdiTextRange
+  },
 ) => {
   const targetStart = parseMdiTextPosition(match.range.start).character
   const targetEnd = parseMdiTextPosition(match.range.end).character
-  const candidates = ranges.filter(({ target, targetOffsetStart, targetOffsetEnd }) => {
-    if (target.blockIndex !== match.blockIndex
-      || target.channel !== match.kind
-      || match.kind === 'annotation' && (target.channel !== 'annotation'
-        || target.annotationIndex !== match.annotationIndex)) return false
+  const bucket = index.get(provenanceBucketKey(match.blockIndex, match.kind, match.annotationIndex)) ?? []
+  const candidates = bucket.filter(({ target, targetOffsetStart, targetOffsetEnd }) => {
     const base = parseMdiTextPosition(target.range.start).character
     const start = base + targetOffsetStart
     const end = base + targetOffsetEnd
@@ -97,12 +129,7 @@ const mappedRanges = (
       : start < targetEnd && targetStart < end
   })
   const precise = candidates.filter(({ graphemeOffsets }) => graphemeOffsets)
-  return (precise.length ? precise : candidates)
-    .sort((left, right) => {
-      const leftStart = parseMdiTextPosition(left.target.range.start).character + left.targetOffsetStart
-      const rightStart = parseMdiTextPosition(right.target.range.start).character + right.targetOffsetStart
-      return leftStart - rightStart
-    })
+  return precise.length ? precise : candidates
 }
 
 const editorRangeForMatch = (ranges: readonly MdiProvenanceRange[], matchRange: MdiTextRange): MdiEditorRange | null => {
@@ -136,9 +163,10 @@ export const createMdiEditorMapping = () => (ctx: Ctx): MdiEditorMappingSnapshot
   // document from the snapshot's canonical source so Rust block indices and
   // provenance targets belong to the exact source exposed by this API.
   const canonicalDoc = ctx.get(parserCtx)(source)
-  snapshotRanges.set(snapshot, hasCanonicalEditorShape(canonicalDoc, state.doc)
+  const ranges = hasCanonicalEditorShape(canonicalDoc, state.doc)
     ? getMdiDocumentProvenance(canonicalDoc) ?? []
-    : [])
+    : []
+  snapshotRangeIndexes.set(snapshot, buildMdiProvenanceRangeIndex(ranges))
   snapshotStates.set(snapshot, state)
   return snapshot
 }
@@ -159,10 +187,10 @@ export const mapMdiSourceSpansToEditorRanges = (
   if (current && (current.source !== snapshot.source || !current.doc.eq(snapshot.doc))) {
     return spans.map(() => ({ coverage: 'none', matches: [], reason: 'stale' as const }))
   }
-  const ranges = snapshotRanges.get(snapshot) ?? []
+  const rangeIndex = snapshotRangeIndexes.get(snapshot) ?? new Map()
   return resolveMdiSourceSpans(snapshot.source, spans).map((resolution) => {
     const matches = resolution.matches.flatMap((match): MdiEditorRangeMatch[] => {
-      const provenanceRanges = mappedRanges(ranges, match)
+      const provenanceRanges = mappedRanges(rangeIndex, match)
       const range = editorRangeForMatch(provenanceRanges, match.range)
       return range ? [{
         ...range,
