@@ -1,6 +1,7 @@
 import { editorStateCtx, editorViewCtx } from '@milkdown/core'
 import { parse } from '@illusions-lab/mdi'
 import { DOMParser } from '@milkdown/prose/model'
+import { TextSelection } from '@milkdown/prose/state'
 import { getHTML, getMarkdown } from '@milkdown/utils'
 import { describe, expect, it } from 'vitest'
 import { getMdi } from '../src/index'
@@ -168,19 +169,38 @@ describe('MDI parsing and serialization', () => {
     const json = editor.action((ctx) => ctx.get(editorStateCtx).doc.toJSON())
     expect(json).toEqual({
       type: 'doc',
-      content: [{ type: 'mdiBlank' }],
+      content: [{ type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null, mdiBlank: true } }],
     })
     expect(editor.action(getMdi())).toBe('\\\n')
     const html = editor.action(getHTML())
     expect(html).toContain(
-      '<div class="mdi-blank" data-mdi-blank=""><br></div>',
+      '<p class="mdi-blank" data-mdi-blank=""></p>',
     )
     editor.action((ctx) => {
       const state = ctx.get(editorStateCtx)
       const container = document.createElement('div')
       container.innerHTML = html
       expect(DOMParser.fromSchema(state.schema).parse(container).toJSON()).toEqual(json)
+      const legacy = document.createElement('div')
+      legacy.innerHTML = '<div class="mdi-blank" data-mdi-blank><br></div>'
+      expect(DOMParser.fromSchema(state.schema).parse(legacy).firstChild?.toJSON()).toMatchObject({
+        type: 'paragraph', attrs: { mdiBlank: true },
+      })
     })
+  })
+
+  it('keeps text when a semantic blank is edited and clears only its internal flag', async () => {
+    const editor = await createEditor('\\')
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)))
+      view.dispatch(view.state.tr.insertText('本文'))
+    })
+    const paragraph = editor.action((ctx) => ctx.get(editorStateCtx).doc.firstChild)
+    expect(paragraph?.type.name).toBe('paragraph')
+    expect(paragraph?.attrs.mdiBlank).toBe(false)
+    expect(paragraph?.textContent).toBe('本文')
+    expect(editor.action(getMdi())).toContain('本文')
   })
 
   it.each([

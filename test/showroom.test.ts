@@ -8,7 +8,7 @@ import { createEditor } from './harness'
 
 interface JsonNode {
   type: string
-  attrs?: { mdiIndent?: number | null; mdiBottom?: number | null; variant?: string | null }
+  attrs?: { mdiIndent?: number | null; mdiBottom?: number | null; mdiBlank?: boolean; variant?: string | null }
 }
 
 const fixture = (name: string) => readFileSync(resolve('debug', name), 'utf8')
@@ -22,15 +22,15 @@ describe('example showroom contract', () => {
     const json = editor.action((ctx) => ctx.get(editorStateCtx).doc.toJSON())
     const content: JsonNode[] = json.content ?? []
     const pagebreaks = content.filter((node) => node.type === 'mdiPagebreak')
-    const blanks = content.filter((node) => node.type === 'mdiBlank')
+    const blanks = content.filter((node) => node.type === 'paragraph' && node.attrs?.mdiBlank === true)
     const paragraphs = content.filter((node) => node.type === 'paragraph')
 
     expect(pagebreaks.map((node) => node.attrs?.variant)).toEqual([null, 'right', 'left'])
     expect(blanks.length).toBeGreaterThanOrEqual(2)
     expect(paragraphs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ attrs: { mdiIndent: 2, mdiBottom: null } }),
-      expect.objectContaining({ attrs: { mdiIndent: null, mdiBottom: 0 } }),
-      expect.objectContaining({ attrs: { mdiIndent: null, mdiBottom: 2 } }),
+      expect.objectContaining({ attrs: expect.objectContaining({ mdiIndent: 2, mdiBottom: null }) }),
+      expect.objectContaining({ attrs: expect.objectContaining({ mdiIndent: null, mdiBottom: 0 }) }),
+      expect.objectContaining({ attrs: expect.objectContaining({ mdiIndent: null, mdiBottom: 2 }) }),
     ]))
 
     const source = editor.action(getMdi())

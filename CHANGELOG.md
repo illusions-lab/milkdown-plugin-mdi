@@ -45,3 +45,8 @@ First public release.
 - Keep parsing, text projection, text blocks, search, indexing, and AI policy in `@illusions-lab/mdi` and application code.
 - Require the stable MDI text-block projection contract and document direct `getMdiTextBlocks()` integration without adding a plugin proxy API.
 - Verify unit, malformed-input, deterministic fuzz, performance, tarball, minimum-peer, browser, and documentation contracts.
+## 0.5.0
+
+- Represent semantic MDI blank lines as editable paragraph nodes.
+- Preserve legacy blank DOM on import while emitting `<p class="mdi-blank">`.
+- `insertBlank`, input rules, and clipboard parsing now produce text selections.

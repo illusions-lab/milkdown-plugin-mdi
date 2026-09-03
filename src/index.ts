@@ -4,6 +4,8 @@ import remarkMdi from '@illusions-lab/mdi-remark'
 import { defaultValueCtx, editorStateTimerCtx, InitReady, ParserReady, remarkPluginsCtx } from '@milkdown/core'
 import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
+import { $prose } from '@milkdown/utils'
+import { Plugin } from '@milkdown/prose/state'
 import { mdastToMdiSource } from 'mdast-util-mdi'
 import {
   installMdiProvenanceParser,
@@ -546,22 +548,6 @@ const mdiBreakSchema = $node('mdiBreak', () => ({
   },
 }))
 
-const mdiBlankSchema = $node('mdiBlank', () => ({
-  group: 'block',
-  atom: true,
-  selectable: true,
-  parseDOM: [{ tag: 'div.mdi-blank[data-mdi-blank]' }],
-  toDOM: () => ['div', { class: 'mdi-blank', 'data-mdi-blank': '' }, ['br']],
-  parseMarkdown: {
-    match: (node) => node.type === 'mdiBlank',
-    runner: (state, _node, type) => state.addNode(type),
-  },
-  toMarkdown: {
-    match: (node) => node.type.name === 'mdiBlank',
-    runner: (state) => state.addNode('mdiBlank'),
-  },
-}))
-
 const isPagebreakVariant = (value: unknown): value is 'right' | 'left' =>
   value === 'right' || value === 'left'
 
@@ -634,14 +620,20 @@ const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
       ...schema.attrs,
       mdiIndent: mdiLayoutAttribute,
       mdiBottom: mdiLayoutAttribute,
+      mdiBlank: { default: false },
     },
     parseDOM: [{
+      tag: 'div.mdi-blank[data-mdi-blank]',
+      priority: 70,
+      getAttrs: () => ({ mdiIndent: null, mdiBottom: null, mdiBlank: true }),
+    }, {
       tag: 'p',
       getAttrs: (dom) => {
         const element = dom as HTMLElement
         return {
           mdiIndent: parseMdiLayoutAttribute(element, 'data-mdi-indent'),
           mdiBottom: parseMdiLayoutAttribute(element, 'data-mdi-bottom'),
+          mdiBlank: element.hasAttribute('data-mdi-blank') && element.textContent === '',
         }
       },
     }],
@@ -661,24 +653,33 @@ const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
         attributes.style = [attributes.style, `--mdi-bottom: ${String(node.attrs.mdiBottom)}`]
           .filter(Boolean).join('; ')
       }
+      if (node.attrs.mdiBlank === true && node.content.size === 0) {
+        attributes.class = [attributes.class, 'mdi-blank'].filter(Boolean).join(' ')
+        attributes['data-mdi-blank'] = ''
+      }
       return ['p', attributes, 0]
     },
     parseMarkdown: {
-      match: (node) => node.type === 'paragraph',
+      match: (node) => node.type === 'paragraph' || node.type === 'mdiBlank',
       runner: (state, node, type) => {
         const data = node.data as Record<string, unknown> | undefined
         state.openNode(type, {
           mdiIndent: typeof data?.mdiIndent === 'number' ? data.mdiIndent : null,
           mdiBottom: typeof data?.mdiBottom === 'number' ? data.mdiBottom : null,
+          mdiBlank: node.type === 'mdiBlank' || data?.mdiBlank === true,
         })
         if (node.children) state.next(node.children)
-        else state.addText((node.value || '') as string)
+        else if (typeof node.value === 'string' && node.value) state.addText(node.value)
         state.closeNode()
       },
     },
     toMarkdown: {
       match: (node) => node.type.name === 'paragraph',
       runner: (state, node) => {
+        if (node.content.size === 0 && node.attrs.mdiBlank === true) {
+          state.addNode('mdiBlank')
+          return
+        }
         const data: Record<string, number> = {}
         if (typeof node.attrs.mdiIndent === 'number') data.mdiIndent = node.attrs.mdiIndent
         else if (typeof node.attrs.mdiBottom === 'number') data.mdiBottom = node.attrs.mdiBottom
@@ -689,6 +690,31 @@ const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
     },
   }
 })
+
+const mdiBlankNormalization = $prose(
+  () => new Plugin({
+    appendTransaction: (transactions, _oldState, state) => {
+      if (!transactions.some((transaction) => transaction.docChanged)) return null
+      const paragraph = state.schema.nodes.paragraph
+      if (!paragraph) return null
+      const updates: Array<{ pos: number; attrs: Record<string, unknown> }> = []
+      state.doc.forEach((node, pos, index) => {
+        if (node.type !== paragraph) return
+        if (node.attrs.mdiBlank === true && node.content.size > 0) {
+          updates.push({ pos, attrs: { ...node.attrs, mdiBlank: false } })
+          return
+        }
+        if (node.content.size === 0 && index < state.doc.childCount - 1 && node.attrs.mdiBlank !== true) {
+          updates.push({ pos, attrs: { ...node.attrs, mdiBlank: true } })
+        }
+      })
+      if (updates.length === 0) return null
+      const tr = state.tr
+      for (const update of updates) tr.setNodeMarkup(update.pos, paragraph, update.attrs)
+      return tr.setMeta('addToHistory', false)
+    },
+  }),
+)
 
 const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
@@ -730,9 +756,9 @@ const mdiPlugins: MilkdownPlugin[] = [
   ...mdiWarichuSchema,
   ...mdiKernSchema,
   mdiBreakSchema,
-  mdiBlankSchema,
   mdiPagebreakSchema,
   ...mdiParagraphSchema,
+  mdiBlankNormalization,
 ]
 
 export function mdi(): MilkdownPlugin[] {

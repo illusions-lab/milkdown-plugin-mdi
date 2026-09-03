@@ -283,7 +283,7 @@ describe('opt-in input and clipboard primitives', () => {
         const view = ctx.get(editorViewCtx)
         const handled = view.someProp('handleTextInput', (handler) => handler(view, 1, 1, source, () => view.state.tr))
         expect(handled).toBe(true)
-        expect(JSON.stringify(view.state.doc.toJSON())).toMatch(/mdi(?:Pagebreak|Blank)/)
+        expect(JSON.stringify(view.state.doc.toJSON())).toMatch(/mdi(?:Pagebreak|Blank)|"mdiBlank":true/)
       })
     },
   )

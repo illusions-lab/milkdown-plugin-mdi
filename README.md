@@ -1,5 +1,13 @@
 # @illusions-lab/milkdown-plugin-mdi
 
+## 0.5.0 migration
+
+Semantic blank lines are now native editable `paragraph` nodes with an internal
+`mdiBlank` attribute. Consumers should treat them as ordinary textblocks: the
+public commands, input rules, and clipboard APIs produce `TextSelection`, and
+the attribute is not part of the public application contract. Legacy blank
+`div` DOM is still accepted and is emitted as `<p class="mdi-blank">`.
+
 MDI syntax support for [Milkdown](https://milkdown.dev/), built for Japanese novel and long-form writing workflows.
 
 The plugin supports document front matter, all inline MDI constructs, semantic

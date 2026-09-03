@@ -59,8 +59,8 @@ describe('opt-in MDI input and clipboard acceptance', () => {
   })
 
   it.each([
-    ['[[blank]]', 'mdiBlank'],
-    ['\\', 'mdiBlank'],
+    ['[[blank]]', 'paragraph'],
+    ['\\', 'paragraph'],
     ['[[pagebreak]]', 'mdiPagebreak'],
     ['[[pagebreak:right]]', 'mdiPagebreak'],
     ['[[pagebreak:left]]', 'mdiPagebreak'],
@@ -70,8 +70,13 @@ describe('opt-in MDI input and clipboard acceptance', () => {
     editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
       expect(JSON.stringify(view.state.doc.toJSON())).toContain(schemaType)
-      expect(view.state.selection).toBeInstanceOf(NodeSelection)
-      expect({ from: view.state.selection.from, to: view.state.selection.to }).toEqual({ from: 0, to: 1 })
+      if (schemaType === 'paragraph') {
+        expect(view.state.selection).toBeInstanceOf(TextSelection)
+        expect(view.state.selection.empty).toBe(true)
+      } else {
+        expect(view.state.selection).toBeInstanceOf(NodeSelection)
+        expect({ from: view.state.selection.from, to: view.state.selection.to }).toEqual({ from: 0, to: 1 })
+      }
       expect(undo(view.state, view.dispatch)).toBe(true)
       expect(JSON.stringify(view.state.doc.toJSON())).not.toContain(schemaType)
       expect(redo(view.state, view.dispatch)).toBe(true)

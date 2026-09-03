@@ -84,11 +84,11 @@ const browserSmoke = async () => {
         || result.mappedRubyMatches !== 1
         || !result.clipboardParsed
         || result.blockJson !== JSON.stringify([
-          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null } },
-          { type: 'paragraph', attrs: { mdiIndent: 2, mdiBottom: null } },
-          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: 0 } },
+          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null, mdiBlank: false } },
+          { type: 'paragraph', attrs: { mdiIndent: 2, mdiBottom: null, mdiBlank: false } },
+          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: 0, mdiBlank: false } },
           { type: 'mdiPagebreak', attrs: { variant: 'right' } },
-          { type: 'mdiBlank' },
+          { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null, mdiBlank: true } },
         ])
         || result.tcy !== 'all'
         || result.blankMinBlockSize === '0px'

@@ -192,6 +192,23 @@ const insertNode = (name: string, attrs?: Record<string, unknown>): Command => (
   return true
 }
 
+const insertBlank: Command = (state, dispatch) => {
+  const target = paragraphPosition(state)
+  const type = state.schema.nodes.paragraph
+  if (!target || !type || state.selection instanceof NodeSelection) return false
+  let tr
+  try {
+    const blank = type.create({ ...target.node.attrs, mdiBlank: true }, null)
+    tr = state.tr.replaceWith(target.pos, target.pos + target.node.nodeSize, blank)
+  } catch {
+    return false
+  }
+  if (!tr.docChanged) return false
+  if (!dispatch) return true
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, target.pos + 1)).scrollIntoView())
+  return true
+}
+
 const setParagraphLayout = (layout: 'indent' | 'bottom', value?: number): Command =>
   (state, dispatch) => {
     const target = paragraphPosition(state)
@@ -230,7 +247,7 @@ export const mdiEditCommand = (operation: MdiEditOperation): Command => {
     case 'setInlineMark': return setInlineMark(operation.mark, operation.value)
     case 'removeInlineMark': return removeInlineMark(operation.mark)
     case 'insertBreak': return insertNode('mdiBreak')
-    case 'insertBlank': return insertNode('mdiBlank')
+    case 'insertBlank': return insertBlank
     case 'insertPagebreak': return insertNode('mdiPagebreak', { variant: operation.variant ?? null })
     case 'setParagraphLayout': return setParagraphLayout(operation.layout, operation.value)
     case 'clearParagraphLayout': return clearParagraphLayout

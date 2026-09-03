@@ -3,7 +3,7 @@ import type { Ctx, MilkdownPlugin } from '@milkdown/ctx'
 import { inputRulesCtx, parserCtx, prosePluginsCtx, schemaCtx, serializerCtx } from '@milkdown/core'
 import { InputRule } from '@milkdown/prose/inputrules'
 import { Slice, type Node as ProseNode } from '@milkdown/prose/model'
-import { Plugin } from '@milkdown/prose/state'
+import { Plugin, TextSelection } from '@milkdown/prose/state'
 
 export const MDI_CLIPBOARD_MIME = 'application/x-illusion-markdown;version=2.0'
 
@@ -95,10 +95,15 @@ const blockRule = (ctx: Ctx) => new InputRule(
       const parsed = ctx.get(parserCtx)(match[1]!)
       const node = parsed.firstChild
       const { $from } = state.selection
-      if (!node || !['mdiPagebreak', 'mdiBlank'].includes(node.type.name) || !$from.parent.isTextblock) {
+      if (!node || !(node.type.name === 'mdiPagebreak' ||
+        (node.type.name === 'paragraph' && node.attrs.mdiBlank === true)) || !$from.parent.isTextblock) {
         return null
       }
-      return state.tr.replaceWith($from.before(), $from.after(), node)
+      const tr = state.tr.replaceWith($from.before(), $from.after(), node)
+      if (node.type.name === 'paragraph') {
+        tr.setSelection(TextSelection.create(tr.doc, $from.before() + 1))
+      }
+      return tr
     } catch {
       return null
     }
