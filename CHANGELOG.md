@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3 - 2026-09-04
+
+- Preserve source/editor provenance mapping while a block paste leaves transient empty paragraphs at the live document tail.
+- Continue rejecting non-empty structural divergence without text, DOM, or traversal-order reassociation.
+
 ## 0.5.2 - 2026-09-04
 
 - Map complete block spans assembled from multiple inline provenance segments.

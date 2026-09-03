@@ -51,6 +51,33 @@ const sameEditorShape = (left: ProseNode, right: ProseNode): boolean => {
   return true
 }
 
+const isTransientEmptyParagraph = (node: ProseNode) =>
+  node.type.name === 'paragraph' && node.childCount === 0
+
+/**
+ * Milkdown can retain an empty paragraph at the end of a block paste even
+ * though its serializer emits only a trailing newline and the canonical parser
+ * drops that paragraph again.
+ *
+ * Source-backed children must remain an exact canonical prefix. Only additional
+ * empty paragraphs at the live document tail are accepted, and no provenance
+ * is assigned to them.
+ */
+const hasCanonicalEditorShape = (
+  canonicalDoc: ProseNode,
+  editorDoc: ProseNode,
+): boolean => {
+  if (canonicalDoc.type !== editorDoc.type
+    || canonicalDoc.childCount > editorDoc.childCount) return false
+  for (let index = 0; index < canonicalDoc.childCount; index += 1) {
+    if (!sameEditorShape(canonicalDoc.child(index), editorDoc.child(index))) return false
+  }
+  for (let index = canonicalDoc.childCount; index < editorDoc.childCount; index += 1) {
+    if (!isTransientEmptyParagraph(editorDoc.child(index))) return false
+  }
+  return true
+}
+
 const mappedRanges = (
   ranges: readonly MdiProvenanceRange[],
   match: { blockIndex: number; kind: 'blockText' | 'annotation'; annotationIndex?: number; range: MdiTextRange },
@@ -109,7 +136,7 @@ export const createMdiEditorMapping = () => (ctx: Ctx): MdiEditorMappingSnapshot
   // document from the snapshot's canonical source so Rust block indices and
   // provenance targets belong to the exact source exposed by this API.
   const canonicalDoc = ctx.get(parserCtx)(source)
-  snapshotRanges.set(snapshot, sameEditorShape(canonicalDoc, state.doc)
+  snapshotRanges.set(snapshot, hasCanonicalEditorShape(canonicalDoc, state.doc)
     ? getMdiDocumentProvenance(canonicalDoc) ?? []
     : [])
   snapshotStates.set(snapshot, state)
