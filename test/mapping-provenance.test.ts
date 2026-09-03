@@ -1,4 +1,4 @@
-import { editorStateCtx, editorViewCtx, parserCtx } from '@milkdown/core'
+import { editorStateCtx, editorViewCtx, parserCtx, schemaCtx } from '@milkdown/core'
 import { history, redo, undo, undoDepth } from '@milkdown/prose/history'
 import { TextSelection } from '@milkdown/prose/state'
 import { $prose } from '@milkdown/utils'
@@ -92,6 +92,27 @@ describe('Rust-provenance editor mapping', () => {
     expect(quoteList.matches).toHaveLength(1)
     expect(listQuote.matches).toHaveLength(1)
     expect(quoteList.matches[0]!.from).toBeLessThan(listQuote.matches[0]!.from)
+  })
+
+  it('maps canonical blocks while the live editor has a transient trailing paragraph', async () => {
+    const editor = await createEditor('first\n\nsecond')
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const paragraph = ctx.get(schemaCtx).nodes.paragraph!.create()
+      view.dispatch(view.state.tr.insert(view.state.doc.content.size, paragraph))
+    })
+
+    const snapshot = editor.action(createMdiEditorMapping())
+    expect(snapshot.source).toBe('first\n\nsecond\n')
+    expect(snapshot.doc.lastChild?.type.name).toBe('paragraph')
+    expect(snapshot.doc.lastChild?.childCount).toBe(0)
+
+    for (const value of ['first', 'second']) {
+      const result = mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, value))
+      expect(result.matches, value).toHaveLength(1)
+      const match = result.matches[0]!
+      expect(snapshot.doc.textBetween(match.from, match.to), value).toBe(value)
+    }
   })
 
   it('rejects reordered and structurally divergent editor documents instead of reassociating candidates', async () => {
