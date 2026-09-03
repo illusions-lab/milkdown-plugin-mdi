@@ -51,14 +51,6 @@ const sameEditorShape = (left: ProseNode, right: ProseNode): boolean => {
   return true
 }
 
-const containsRange = (outer: MdiTextRange, inner: MdiTextRange) => {
-  const start = parseMdiTextPosition(outer.start).character
-  const end = parseMdiTextPosition(outer.end).character
-  const innerStart = parseMdiTextPosition(inner.start).character
-  const innerEnd = parseMdiTextPosition(inner.end).character
-  return start <= innerStart && innerEnd <= end
-}
-
 const mappedRanges = (
   ranges: readonly MdiProvenanceRange[],
   match: { blockIndex: number; kind: 'blockText' | 'annotation'; annotationIndex?: number; range: MdiTextRange },
@@ -69,8 +61,7 @@ const mappedRanges = (
     if (target.blockIndex !== match.blockIndex
       || target.channel !== match.kind
       || match.kind === 'annotation' && (target.channel !== 'annotation'
-        || target.annotationIndex !== match.annotationIndex)
-      || !containsRange(target.range, match.range)) return false
+        || target.annotationIndex !== match.annotationIndex)) return false
     const base = parseMdiTextPosition(target.range.start).character
     const start = base + targetOffsetStart
     const end = base + targetOffsetEnd
@@ -80,19 +71,24 @@ const mappedRanges = (
   })
   const precise = candidates.filter(({ graphemeOffsets }) => graphemeOffsets)
   return (precise.length ? precise : candidates)
-    .sort((left, right) => left.targetOffsetStart - right.targetOffsetStart)
+    .sort((left, right) => {
+      const leftStart = parseMdiTextPosition(left.target.range.start).character + left.targetOffsetStart
+      const rightStart = parseMdiTextPosition(right.target.range.start).character + right.targetOffsetStart
+      return leftStart - rightStart
+    })
 }
 
 const editorRangeForMatch = (ranges: readonly MdiProvenanceRange[], matchRange: MdiTextRange): MdiEditorRange | null => {
   const first = ranges[0]
   const last = ranges.at(-1)
   if (!first || !last) return null
-  const targetStart = parseMdiTextPosition(first.target.range.start).character
-  const matchStart = parseMdiTextPosition(matchRange.start).character - targetStart
-  const matchEnd = parseMdiTextPosition(matchRange.end).character - targetStart
-  const startOffset = first.graphemeOffsets?.[Math.max(0, matchStart - first.targetOffsetStart)]
+  const firstStart = parseMdiTextPosition(first.target.range.start).character + first.targetOffsetStart
+  const lastStart = parseMdiTextPosition(last.target.range.start).character + last.targetOffsetStart
+  const matchStart = parseMdiTextPosition(matchRange.start).character
+  const matchEnd = parseMdiTextPosition(matchRange.end).character
+  const startOffset = first.graphemeOffsets?.[Math.max(0, matchStart - firstStart)]
   const endOffset = last.graphemeOffsets?.[
-    Math.min(last.targetOffsetEnd - last.targetOffsetStart, matchEnd - last.targetOffsetStart)
+    Math.min(last.targetOffsetEnd - last.targetOffsetStart, matchEnd - lastStart)
   ]
   return {
     from: startOffset === undefined ? first.from : first.from + startOffset,

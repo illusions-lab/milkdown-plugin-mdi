@@ -67,6 +67,22 @@ describe('Rust-provenance editor mapping', () => {
     expect(resolver).toHaveBeenCalledWith(snapshot.source, spans)
   })
 
+  it('maps whole block spans assembled from mixed inline provenance segments', async () => {
+    const editor = await createEditor('first\n\nplain **strong** tail\n\nthird')
+    const snapshot = editor.action(createMdiEditorMapping())
+    const blocks = mdiRuntime.getMdiTextBlocks(snapshot.source).blocks
+    const results = mapMdiSourceSpansToEditorRanges(
+      snapshot,
+      blocks.map((block) => block.span!),
+    )
+
+    expect(results.map(({ matches }) => matches.length)).toEqual([1, 1, 1])
+    expect(results.map(({ matches }) => {
+      const match = matches[0]!
+      return snapshot.doc.textBetween(match.from, match.to)
+    })).toEqual(['first', 'plain strong tail', 'third'])
+  })
+
   it('maps both blockquote/list nesting directions without traversal-order association', async () => {
     const editor = await createEditor('> - quote list\n\n- outer\n  > list quote')
     const snapshot = editor.action(createMdiEditorMapping())
