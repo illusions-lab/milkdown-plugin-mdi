@@ -1,7 +1,13 @@
 import { createSlice, createTimer, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
-import { serializeMdi } from '@illusions-lab/mdi'
 import remarkMdi from '@illusions-lab/mdi-remark'
-import { defaultValueCtx, editorStateTimerCtx, InitReady, ParserReady, remarkPluginsCtx } from '@milkdown/core'
+import {
+  defaultValueCtx,
+  editorStateTimerCtx,
+  InitReady,
+  ParserReady,
+  remarkPluginsCtx,
+  remarkStringifyOptionsCtx,
+} from '@milkdown/core'
 import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { $prose } from '@milkdown/utils'
@@ -12,6 +18,11 @@ import {
   type MdiBridgeData,
   type MdiBridgeSegment,
 } from './provenance.js'
+import {
+  canonicalizeMdiPreservingLiteralText,
+  canonicalizeMdiSource,
+  literalPlaceholder,
+} from './literal-text.js'
 
 export { initializeMdi } from '@illusions-lab/mdi'
 
@@ -22,6 +33,7 @@ const mdiProvenanceReady = createTimer('mdiProvenanceReady')
 interface PositionalMdastNode {
   type: string
   value?: string
+  mdiLiteral?: boolean
   children?: PositionalMdastNode[]
   data?: Record<string, unknown> & MdiBridgeData
   position?: {
@@ -48,6 +60,7 @@ const SUPPORTED_MDAST_TYPES = new Set([
   'mdiBreak',
   'mdiEm',
   'mdiKern',
+  'mdiLiteralText',
   'mdiNoBreak',
   'mdiPagebreak',
   'mdiRuby',
@@ -58,6 +71,11 @@ const SUPPORTED_MDAST_TYPES = new Set([
   'text',
   'thematicBreak',
 ])
+
+const promoteLiteralTextNodes = (node: PositionalMdastNode) => {
+  if (node.type === 'text' && node.mdiLiteral === true) node.type = 'mdiLiteralText'
+  node.children?.forEach(promoteLiteralTextNodes)
+}
 
 const BLOCK_CONTAINERS = new Set(['root', 'blockquote', 'listItem'])
 
@@ -263,6 +281,7 @@ const createRemarkMdiForMilkdown = (ctx: Ctx) => {
       const source = typeof file.value === 'string' ? file.value : ''
       const offsets = sourceOffsets(tree, source)
       extractFrontmatter(tree, ctx)
+      promoteLiteralTextNodes(tree)
       normalizeUnsupportedNodes(tree, offsets)
       splitProvenanceLineBreaks(tree)
       addCommonmarkMarkerPositions(tree, offsets)
@@ -387,6 +406,29 @@ const mdiTcySchema = $markSchema('mdiTcy', () => ({
     match: (mark) => mark.type.name === 'mdiTcy',
     runner: (state, mark, node) => {
       state.withMark(mark, 'mdiTcy', node.text ?? '')
+      return true
+    },
+  },
+}))
+
+// A transient, presentation-neutral mark distinguishes explicit literal-text
+// paste from unsupported Markdown fallback. It is persisted as escaped source
+// and reconstructed from Rust's parse-time literal marker on reopen.
+const mdiLiteralSchema = $markSchema('mdiLiteral', () => ({
+  parseDOM: [{ tag: 'span[data-mdi-literal]' }],
+  toDOM: () => ['span', { 'data-mdi-literal': '' }, 0],
+  parseMarkdown: {
+    match: (node) => node.type === 'mdiLiteralText',
+    runner: (state, node, type) => {
+      state.openMark(type)
+      state.addText(typeof node.value === 'string' ? node.value : '')
+      state.closeMark(type)
+    },
+  },
+  toMarkdown: {
+    match: (mark) => mark.type.name === 'mdiLiteral',
+    runner: (state, mark, node) => {
+      state.withMark(mark, 'mdiLiteralText', node.text ?? '')
       return true
     },
   },
@@ -719,13 +761,32 @@ const mdiBlankNormalization = $prose(
 const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
   ctx.update(editorStateTimerCtx, (timers) => [...timers, mdiProvenanceReady])
+  const literalMdiUnsafe = [
+    { character: '{', after: '[^{}\\r\\n]*\\|', inConstruct: 'phrasing' as const },
+    { character: '^', after: '[^^\\r\\n]+\\^', inConstruct: 'phrasing' as const },
+    { character: '[', after: '\\[', inConstruct: 'phrasing' as const },
+    { character: '《', after: '《', inConstruct: 'phrasing' as const },
+  ]
+  const literalTextHandler = (node: { value?: unknown }) => literalPlaceholder(
+    typeof node.value === 'string' ? node.value : '',
+  )
+  ctx.update(remarkStringifyOptionsCtx, (options) => ({
+    ...options,
+    handlers: {
+      ...options.handlers,
+      mdiLiteralText: literalTextHandler,
+    } as typeof options.handlers,
+    unsafe: [...(options.unsafe ?? []), ...literalMdiUnsafe],
+  }))
   ctx.record(mdiProvenanceReady)
   return async () => {
     await ctx.wait(InitReady)
     // The initial document is parsed only once. Canonicalize it before the
     // provenance parser is installed so its document shape and the later
     // source-coordinate snapshot always describe the same MDI source.
-    ctx.update(defaultValueCtx, (source) => typeof source === 'string' ? serializeMdi(source) : source)
+    ctx.update(defaultValueCtx, (source) => (
+      typeof source === 'string' ? canonicalizeMdiPreservingLiteralText(source) : source
+    ))
     let entry: unknown
     ctx.update(remarkPluginsCtx, (plugins) => {
       const nextEntry = {
@@ -740,6 +801,17 @@ const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
     ctx.done(mdiProvenanceReady)
     return () => {
       ctx.update(remarkPluginsCtx, (plugins) => plugins.filter((plugin) => plugin !== entry))
+      ctx.update(remarkStringifyOptionsCtx, (options) => ({
+        ...options,
+        handlers: Object.fromEntries(
+          Object.entries(options.handlers ?? {}).filter(
+            ([name, handler]) => name !== 'mdiLiteralText' || handler !== literalTextHandler,
+          ),
+        ) as typeof options.handlers,
+        unsafe: (options.unsafe ?? []).filter(
+          (rule) => !literalMdiUnsafe.some((candidate) => candidate === rule),
+        ),
+      }))
       ctx.remove(mdiFrontmatterCtx)
       ctx.clearTimer(mdiProvenanceReady)
     }
@@ -750,6 +822,7 @@ const mdiPlugins: MilkdownPlugin[] = [
   mdiRemarkPlugin,
   mdiRubySchema,
   ...gfmDeleteSchema,
+  ...mdiLiteralSchema,
   ...mdiTcySchema,
   ...mdiBotenSchema,
   ...mdiNoBreakSchema,
@@ -772,18 +845,7 @@ export function getMdi(): (ctx: Ctx) => string {
     const source = frontmatter === undefined
       ? body
       : `---\n${frontmatter}\n---\n\n${body}`
-    const first = serializeMdi(source)
-    let candidate = first
-    // Milkdown can expose formerly unsupported literal block syntax to MDI on
-    // the first pass (for example, a fallback table). Let Rust converge such
-    // constructs through a small bounded number of canonical passes, but keep
-    // the first canonical form if an upstream serializer ever oscillates.
-    for (let pass = 0; pass < 8; pass += 1) {
-      const next = serializeMdi(candidate)
-      if (next === candidate) return candidate
-      candidate = next
-    }
-    return first
+    return canonicalizeMdiSource(source)
   }
 }
 

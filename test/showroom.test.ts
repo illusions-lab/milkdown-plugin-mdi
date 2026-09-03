@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { editorStateCtx } from '@milkdown/core'
-import { parse, serializeMdi } from '@illusions-lab/mdi'
+import { parse } from '@illusions-lab/mdi'
 import { describe, expect, it } from 'vitest'
 import { getMdi } from '../src/index'
 import { createEditor } from './harness'
@@ -41,7 +41,8 @@ describe('example showroom contract', () => {
     expect(source).toContain('[[pagebreak]]')
     expect(source).toContain('[[pagebreak:right]]')
     expect(source).toContain('[[pagebreak:left]]')
-    expect(serializeMdi(source)).toBe(source)
+    const reopened = await createEditor(source)
+    expect(reopened.action(getMdi())).toBe(source)
     expect(() => parse(source)).not.toThrow()
   })
 })
