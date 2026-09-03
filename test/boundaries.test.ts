@@ -21,11 +21,26 @@ describe('canonical CommonMark boundaries', () => {
   it.each([
     '*em* and _em_ and **strong** and __strong__',
     '***nested***, _**mixed**_, and **_inside_**',
-    '`*code*` and \\*literal\\* and [link](https://example.com)',
+    '`*code*` and [link](https://example.com)',
     '> quoted **strong**\n>\n> - nested *emphasis*',
   ])('matches upstream canonicalization exactly: %s', async (source) => {
     const editor = await createEditor(source)
     expect(editor.action(getMdi())).toBe(serializeMdi(source))
+  })
+
+  it('keeps explicitly escaped CommonMark text literal across reopen', async () => {
+    const source = '`*code*` and \\*literal\\* and [link](https://example.com)'
+    const editor = await createEditor(source)
+    const persisted = editor.action(getMdi())
+    expect(persisted).toContain('\\*literal\\*')
+    const reopened = await createEditor(persisted)
+    expect(reopened.action(getMdi())).toBe(persisted)
+  })
+
+  it('does not treat user-authored HTML comments as internal literal placeholders', async () => {
+    const source = '<!--mdi-literal:6162-->'
+    const editor = await createEditor(source)
+    expect(editor.action(getMdi()).trim()).toBe(source)
   })
 
   it.each([

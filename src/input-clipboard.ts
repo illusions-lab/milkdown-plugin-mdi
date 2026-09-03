@@ -1,15 +1,28 @@
-import { parse, serializeMdi } from '@illusions-lab/mdi'
+import { parse } from '@illusions-lab/mdi'
 import type { Ctx, MilkdownPlugin } from '@milkdown/ctx'
 import { inputRulesCtx, parserCtx, prosePluginsCtx, schemaCtx, serializerCtx } from '@milkdown/core'
 import { InputRule } from '@milkdown/prose/inputrules'
-import { Slice, type Node as ProseNode } from '@milkdown/prose/model'
+import { Fragment, Slice, type Node as ProseNode } from '@milkdown/prose/model'
 import { Plugin, TextSelection } from '@milkdown/prose/state'
+import {
+  canonicalizeMdiPreservingLiteralText,
+  canonicalizeMdiSource,
+} from './literal-text.js'
 
 export const MDI_CLIPBOARD_MIME = 'application/x-illusion-markdown;version=2.0'
 
 export interface MdiClipboardParseOptions {
   /** Accept an ordinary MDI/Markdown document even when it has no MDI-only construct. */
   explicit?: boolean
+}
+
+export interface MdiClipboardCanonicalizeOptions {
+  /**
+   * The explicit clipboard representation that produced the slice. Both paths
+   * rebuild through canonical MDI; literal text is marked before serialization
+   * so syntax-looking text cannot gain semantics on reopen.
+   */
+  source: 'rich' | 'literal-text'
 }
 
 const MDI_NODE_TYPES = new Set([
@@ -30,7 +43,7 @@ const parsedSlice = (ctx: Ctx, source: string, options: MdiClipboardParseOptions
   const result = parse(source)
   if (result.diagnostics.some(({ code }) => code === 'mdi.version.unsupported')) return null
   if (!options.explicit && !containsMdi(result)) return null
-  const canonical = serializeMdi(source)
+  const canonical = canonicalizeMdiPreservingLiteralText(source)
   const doc = ctx.get(parserCtx)(canonical)
   return new Slice(doc.content, 0, 0)
 }
@@ -58,7 +71,41 @@ export const serializeMdiClipboard = (slice: Slice) => (ctx: Ctx): string | null
   const doc = documentForSlice(ctx, slice)
   if (!doc) return null
   try {
-    return serializeMdi(ctx.get(serializerCtx)(doc))
+    return canonicalizeMdiSource(ctx.get(serializerCtx)(doc))
+  } catch {
+    return null
+  }
+}
+
+/** Rebuild an interoperable PM slice through one canonical, provenance-ready source. */
+export const canonicalizeMdiClipboardSlice = (
+  slice: Slice,
+  options: MdiClipboardCanonicalizeOptions,
+) => (ctx: Ctx): Slice | null => {
+  if (options.source !== 'rich' && options.source !== 'literal-text') return null
+  const doc = documentForSlice(ctx, slice)
+  if (!doc) return null
+  try {
+    const literalMark = ctx.get(schemaCtx).marks.mdiLiteral
+    const visit = (fragment: Fragment): Fragment => {
+      const nodes: ProseNode[] = []
+      fragment.forEach((node) => {
+        if (node.isText && literalMark) {
+          nodes.push(node.mark(literalMark.create().addToSet(node.marks)))
+        } else {
+          nodes.push(node.isLeaf ? node : node.copy(visit(node.content)))
+        }
+      })
+      return Fragment.fromArray(nodes)
+    }
+    // The slice structure is the only semantic authority. Mark every text leaf
+    // while serializing so syntax-looking text cannot be reinterpreted as a new
+    // MDI construct; existing marks and block nodes remain intact.
+    const sourceDoc = doc.copy(visit(doc.content))
+    const serialized = ctx.get(serializerCtx)(sourceDoc)
+    const source = canonicalizeMdiPreservingLiteralText(serialized)
+    const parsed = ctx.get(parserCtx)(source)
+    return new Slice(parsed.content, 0, 0)
   } catch {
     return null
   }

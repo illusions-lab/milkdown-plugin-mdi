@@ -1,14 +1,17 @@
 import { editorStateCtx, editorViewCtx, inputRulesCtx, prosePluginsCtx } from '@milkdown/core'
 import { history, redo, undo } from '@milkdown/prose/history'
 import { AllSelection, NodeSelection, TextSelection } from '@milkdown/prose/state'
-import { Slice } from '@milkdown/prose/model'
+import { Fragment, Slice } from '@milkdown/prose/model'
 import { $prose } from '@milkdown/utils'
 import { describe, expect, it } from 'vitest'
 import {
+  canonicalizeMdiClipboardSlice,
+  createMdiEditorMapping,
   getMdi,
   MDI_CLIPBOARD_MIME,
   mdiClipboard,
   mdiInputRules,
+  mapMdiSourceSpanToEditorRanges,
   parseMdiClipboard,
   serializeMdiClipboard,
 } from '../src/index'
@@ -34,6 +37,84 @@ const handleText = (source: string, plugins = [mdiInputRules()]) => createEditor
 })
 
 describe('opt-in MDI input and clipboard acceptance', () => {
+  it('keeps literal MDI and Markdown-looking text literal after save and reopen', async () => {
+    const literal = '{東京|とうきょう} [[em:強調]] ^12^ **太字** [リンク](https://example.test)'
+    const editor = await createEditor('')
+    const persisted = editor.action((ctx) => {
+      const state = ctx.get(editorStateCtx)
+      const paragraph = state.schema.nodes.paragraph!.create(null, state.schema.text(literal))
+      const slice = canonicalizeMdiClipboardSlice(
+        new Slice(Fragment.from(paragraph), 0, 0),
+        { source: 'literal-text' },
+      )(ctx)
+      expect(slice).not.toBeNull()
+      expect(slice!.content.textBetween(0, slice!.content.size, '\n')).toBe(literal)
+      expect(JSON.stringify(slice!.content.toJSON())).not.toMatch(/mdiRuby|mdiTcy|mdiBoten|strong|link/)
+      expect(JSON.stringify(slice!.content.toJSON())).toContain('mdiLiteral')
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, slice!.content))
+      return getMdi()(ctx)
+    })
+
+    const reopened = await createEditor(persisted)
+    reopened.action((ctx) => {
+      const state = ctx.get(editorStateCtx)
+      expect(state.doc.textContent).toBe(literal)
+      expect(JSON.stringify(state.doc.toJSON())).not.toMatch(/mdiRuby|mdiTcy|mdiBoten|strong|link/)
+      expect(JSON.stringify(state.doc.toJSON())).toContain('mdiLiteral')
+      expect(getMdi()(ctx)).toBe(persisted)
+    })
+  })
+
+  it('canonicalizes rich slices without dropping supported document semantics', async () => {
+    const editor = await createEditor('# 見出し\n\n**強調**\n\n> 引用\n\n- 一\n- 二')
+    editor.action((ctx) => {
+      const state = ctx.get(editorStateCtx)
+      const canonical = canonicalizeMdiClipboardSlice(
+        state.doc.slice(0, state.doc.content.size),
+        { source: 'rich' },
+      )(ctx)
+      expect(canonical).not.toBeNull()
+      const json = JSON.stringify(canonical!.content.toJSON())
+      expect(json).toContain('heading')
+      expect(json).toContain('strong')
+      expect(json).toContain('blockquote')
+      expect(json).toContain('bullet_list')
+      expect(serializeMdiClipboard(canonical!)(ctx)).toBe(getMdi()(ctx))
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, canonical!.content))
+      const mapping = createMdiEditorMapping()(ctx)
+      const start = mapping.source.indexOf('強調')
+      const startByte = new TextEncoder().encode(mapping.source.slice(0, start)).length
+      const endByte = startByte + new TextEncoder().encode('強調').length
+      expect(mapMdiSourceSpanToEditorRanges(mapping, { startByte, endByte }).coverage).toBe('complete')
+    })
+  })
+
+  it('does not infer MDI semantics from ordinary text inside a rich slice', async () => {
+    const editor = await createEditor('')
+    editor.action((ctx) => {
+      const schema = ctx.get(editorStateCtx).schema
+      const paragraph = schema.nodes.paragraph!.create(null, [
+        schema.text('{東京|とうきょう} '),
+        schema.text('強調', [schema.marks.strong!.create()]),
+        schema.text(' 連結', [schema.marks.link!.create({ href: 'https://example.test' })]),
+      ])
+      const canonical = canonicalizeMdiClipboardSlice(
+        new Slice(Fragment.from(paragraph), 0, 0),
+        { source: 'rich' },
+      )(ctx)
+      expect(canonical).not.toBeNull()
+      const json = JSON.stringify(canonical!.content.toJSON())
+      expect(json).not.toContain('mdiRuby')
+      expect(json).toContain('strong')
+      expect(json).toContain('link')
+      expect(canonical!.content.textBetween(0, canonical!.content.size, '\n')).toBe(
+        '{東京|とうきょう} 強調 連結',
+      )
+    })
+  })
+
   it.each([
     ['{東京|とうきょう}', 'mdiRuby'],
     ['{雪女|ゆき.おんな}', 'mdiRuby'],

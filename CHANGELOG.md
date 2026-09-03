@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 - 2026-09-03
+
+- Add explicit rich and literal-text clipboard slice canonicalization.
+- Keep MDI- and Markdown-looking literal text unchanged after save and reopen.
+- Preserve supported rich document semantics and provenance mapping while filtering unsupported styling.
+
 ## 0.4.2 - 2026-08-19
 
 - Keep tate-chu-yoko as a native inline box so vertical writing does not create an empty line-sized gap before the combined glyphs.
