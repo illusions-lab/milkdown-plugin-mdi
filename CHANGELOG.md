@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2 - 2026-09-04
+
+- Map complete block spans assembled from multiple inline provenance segments.
+- Preserve exact editor offsets when a block mixes plain text with marks or MDI annotations.
+
 ## 0.5.1 - 2026-09-03
 
 - Add explicit rich and literal-text clipboard slice canonicalization.
