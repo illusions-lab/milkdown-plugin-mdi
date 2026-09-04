@@ -852,3 +852,4 @@ export function getMdi(): (ctx: Ctx) => string {
 export * from './editing.js'
 export * from './input-clipboard.js'
 export * from './mapping.js'
+export * from './projection.js'

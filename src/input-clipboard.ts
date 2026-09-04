@@ -10,6 +10,8 @@ import {
 } from './literal-text.js'
 
 export const MDI_CLIPBOARD_MIME = 'application/x-illusion-markdown;version=2.0'
+export const MDI_CLIPBOARD_SLICE_MIME = 'application/x-illusion-markdown-slice;version=1'
+const MDI_CLIPBOARD_SLICE_VERSION = 1
 
 export interface MdiClipboardParseOptions {
   /** Accept an ordinary MDI/Markdown document even when it has no MDI-only construct. */
@@ -23,6 +25,13 @@ export interface MdiClipboardCanonicalizeOptions {
    * so syntax-looking text cannot gain semantics on reopen.
    */
   source: 'rich' | 'literal-text'
+}
+
+export interface MdiClipboardSlicePayload {
+  readonly version: 1
+  readonly mdi: string
+  readonly openStart: number
+  readonly openEnd: number
 }
 
 const MDI_NODE_TYPES = new Set([
@@ -66,6 +75,39 @@ const documentForSlice = (ctx: Ctx, slice: Slice): ProseNode | null => {
   return paragraph ? schema.topNodeType.createAndFill(null, paragraph) : null
 }
 
+const openDepth = (node: ProseNode | null | undefined, fromEnd: boolean): number => {
+  if (!node || !node.content.size) return 0
+  const child = fromEnd ? node.lastChild : node.firstChild
+  return child ? 1 + openDepth(child, fromEnd) : 0
+}
+
+const validOpenDepth = (slice: Slice, openStart: number, openEnd: number): boolean =>
+  Number.isInteger(openStart) && Number.isInteger(openEnd) && openStart >= 0 && openEnd >= 0
+  && openStart <= openDepth(slice.content.firstChild, false)
+  && openEnd <= openDepth(slice.content.lastChild, true)
+
+export const encodeMdiClipboardSlice = (slice: Slice) => (ctx: Ctx): string | null => {
+  if (!validOpenDepth(slice, slice.openStart, slice.openEnd)) return null
+  const mdi = serializeMdiClipboard(slice)(ctx)
+  return mdi ? JSON.stringify({ version: MDI_CLIPBOARD_SLICE_VERSION, mdi,
+    openStart: slice.openStart, openEnd: slice.openEnd } satisfies MdiClipboardSlicePayload) : null
+}
+
+export const decodeMdiClipboardSlice = (source: string) => (ctx: Ctx): Slice | null => {
+  try {
+    const value: unknown = JSON.parse(source)
+    if (!value || typeof value !== 'object') return null
+    const payload = value as Partial<MdiClipboardSlicePayload>
+    if (payload.version !== MDI_CLIPBOARD_SLICE_VERSION || typeof payload.mdi !== 'string'
+      || !Number.isInteger(payload.openStart) || !Number.isInteger(payload.openEnd)) return null
+    const parsed = parseMdiClipboard(payload.mdi, { explicit: true })(ctx)
+    if (!parsed || !validOpenDepth(parsed, payload.openStart!, payload.openEnd!)) return null
+    return new Slice(parsed.content, payload.openStart!, payload.openEnd!)
+  } catch {
+    return null
+  }
+}
+
 /** Serialize a PM slice to canonical interoperable MDI text. */
 export const serializeMdiClipboard = (slice: Slice) => (ctx: Ctx): string | null => {
   const doc = documentForSlice(ctx, slice)
@@ -105,7 +147,9 @@ export const canonicalizeMdiClipboardSlice = (
     const serialized = ctx.get(serializerCtx)(sourceDoc)
     const source = canonicalizeMdiPreservingLiteralText(serialized)
     const parsed = ctx.get(parserCtx)(source)
-    return new Slice(parsed.content, 0, 0)
+    const parsedSlice = new Slice(parsed.content, 0, 0)
+    if (!validOpenDepth(parsedSlice, slice.openStart, slice.openEnd)) return null
+    return new Slice(parsed.content, slice.openStart, slice.openEnd)
   } catch {
     return null
   }
@@ -202,15 +246,19 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
           const clipboard = (event as ClipboardEvent).clipboardData
           if (!clipboard || view.state.selection.empty) return false
           const source = serializeMdiClipboard(view.state.selection.content())(ctx)
-          if (!source) return false
+          const slice = view.state.selection.content()
+          const structured = encodeMdiClipboardSlice(slice)(ctx)
+          if (!source || !structured) return false
           let written = false
           try {
+            clipboard.setData(MDI_CLIPBOARD_SLICE_MIME, structured)
             clipboard.setData(MDI_CLIPBOARD_MIME, source)
             written = true
           } catch {
             // Some clipboard implementations reject non-standard MIME types.
           }
           try {
+            clipboard.setData('text/html', view.serializeForClipboard(slice).dom.innerHTML)
             clipboard.setData('text/plain', source)
             written = true
           } catch {
@@ -224,9 +272,11 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
       handlePaste: (view, event) => {
         const clipboard = event.clipboardData
         if (!clipboard) return false
+        let structuredSource = ''
         let explicitSource = ''
         let plainSource = ''
         try {
+          structuredSource = clipboard.getData(MDI_CLIPBOARD_SLICE_MIME)
           explicitSource = clipboard.getData(MDI_CLIPBOARD_MIME)
         } catch {
           // Fall through to interoperable text/plain.
@@ -237,6 +287,11 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
           } catch {
             return false
           }
+        }
+        const structured = structuredSource ? decodeMdiClipboardSlice(structuredSource)(ctx) : null
+        if (structured) {
+          view.dispatch(view.state.tr.replaceSelection(structured).scrollIntoView())
+          return true
         }
         const source = explicitSource || plainSource
         if (!source) return false

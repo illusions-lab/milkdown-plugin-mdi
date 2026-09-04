@@ -16,6 +16,8 @@ import {
   mapMdiSourceSpanToEditorRange,
   MDI_CLIPBOARD_MIME,
   parseMdiClipboard,
+  projectCurrentMdiEditorBlocks,
+  projectMdiEditorBlocks,
   serializeMdiClipboard,
 } from '../src/index'
 import { createEditor } from './harness'
@@ -29,6 +31,25 @@ const byteSpan = (source: string, value: string, occurrence = 0) => {
 }
 
 describe('source/editor mapping primitives', () => {
+  it('projects source blocks and editable blanks into display order', async () => {
+    const editor = await createEditor('# heading\n\n> quote\n\n- item\n\n```txt\ncode\n```\n\n\\')
+    const projection = editor.action(projectCurrentMdiEditorBlocks())
+    expect(projection.complete).toBe(true)
+    expect(projection.blocks.map(({ displayIndex }) => displayIndex)).toEqual(
+      projection.blocks.map((_block, index) => index + 1),
+    )
+    expect(projection.blocks.some(({ kind }) => kind === 'heading')).toBe(true)
+    expect(projection.blocks.some(({ kind }) => kind === 'blockquote')).toBe(true)
+    expect(projection.blocks.some(({ kind }) => kind === 'listItem')).toBe(true)
+    expect(projection.blocks.some(({ kind }) => kind === 'code')).toBe(true)
+    expect(projection.blocks.some(({ semanticBlank }) => semanticBlank)).toBe(true)
+    const snapshot = editor.action(createMdiEditorMapping())
+    expect(projectMdiEditorBlocks(snapshot).source).toBe(snapshot.source)
+
+    const leaf = await createEditor('[[pagebreak]]')
+    expect(leaf.action(projectCurrentMdiEditorBlocks()).blocks).toHaveLength(0)
+  })
+
   it('maps repeated Unicode source spans by block identity, not text search', async () => {
     const editor = await createEditor('同じ 👩🏽‍💻\n\n同じ 👩🏽‍💻')
     const snapshot = editor.action(createMdiEditorMapping())

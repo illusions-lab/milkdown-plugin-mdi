@@ -171,6 +171,25 @@ describe('typed MDI editing acceptance', () => {
     await applyUndoRedo('text', 1, 1, { type: 'insertPagebreak', variant: 'left' }, '[[pagebreak:left]]')
   })
 
+  it('splits a paragraph around the caret and keeps blank selection at every boundary', async () => {
+    for (const [source, position, expectedChildren] of [
+      ['one', 2, 3],
+      ['one', 1, 2],
+      ['one', 4, 2],
+    ] as const) {
+      const editor = await createEditor(source)
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, position)))
+        expect(mdiEditCommand({ type: 'insertBlank' })(view.state, view.dispatch)).toBe(true)
+        expect(view.state.doc.childCount).toBe(expectedChildren)
+        expect(view.state.selection).toBeInstanceOf(TextSelection)
+        expect(view.state.selection.empty).toBe(true)
+        expect(view.state.selection.$from.parent.attrs.mdiBlank).toBe(true)
+      })
+    }
+  })
+
   it('defines inline NodeSelection insertion semantics without partial mutation', async () => {
     const editor = await createEditor('{字|じ}')
     editor.action((ctx) => {

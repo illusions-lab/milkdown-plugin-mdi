@@ -1,20 +1,10 @@
 # Changelog
 
-## 0.5.4 - 2026-09-04
+## 0.6.0 - 2026-09-04
 
-- Index immutable provenance ranges once by Rust block, channel, and annotation identity.
-- Resolve large batches in O(N + matches) instead of rescanning all provenance for every match.
-- Preserve duplicate text, mixed-inline, annotation, structural rejection, and transient-tail mapping semantics.
-
-## 0.5.3 - 2026-09-04
-
-- Preserve source/editor provenance mapping while a block paste leaves transient empty paragraphs at the live document tail.
-- Continue rejecting non-empty structural divergence without text, DOM, or traversal-order reassociation.
-
-## 0.5.2 - 2026-09-04
-
-- Map complete block spans assembled from multiple inline provenance segments.
-- Preserve exact editor offsets when a block mixes plain text with marks or MDI annotations.
+- Add atomic blank-paragraph insertion with selection and nested-container safety.
+- Add structured MDI clipboard slices with validated open depths while preserving raw MDI fallback.
+- Add the public MDI editor-block projection with source and display indices.
 
 ## 0.5.1 - 2026-09-03
 

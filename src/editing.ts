@@ -1,4 +1,4 @@
-import type { Node as ProseNode } from '@milkdown/prose/model'
+import { Fragment, type Node as ProseNode } from '@milkdown/prose/model'
 import { NodeSelection, TextSelection, type Command, type EditorState } from '@milkdown/prose/state'
 
 export type MdiRubyReading = string | readonly string[]
@@ -196,16 +196,30 @@ const insertBlank: Command = (state, dispatch) => {
   const target = paragraphPosition(state)
   const type = state.schema.nodes.paragraph
   if (!target || !type || state.selection instanceof NodeSelection) return false
+  const { $from, $to } = state.selection
+  if (!$from.sameParent($to)) return false
+  const start = $from.parentOffset
+  const end = $to.parentOffset
+  const contentSize = target.node.content.size
+  const parts: ProseNode[] = []
   let tr
   try {
-    const blank = type.create({ ...target.node.attrs, mdiBlank: true }, null)
-    tr = state.tr.replaceWith(target.pos, target.pos + target.node.nodeSize, blank)
+    if (start > 0) parts.push(target.node.copy(target.node.content.cut(0, start)))
+    parts.push(type.create({ mdiBlank: true }))
+    if (end < contentSize) parts.push(target.node.copy(target.node.content.cut(end)))
+    const $parent = state.doc.resolve(target.pos)
+    const index = $parent.indexAfter($parent.depth)
+    if (!$parent.parent.canReplace(index, index + 1, Fragment.fromArray(parts))) return false
+    tr = state.tr.replaceWith(target.pos, target.pos + target.node.nodeSize, Fragment.fromArray(parts))
   } catch {
     return false
   }
   if (!tr.docChanged) return false
   if (!dispatch) return true
-  dispatch(tr.setSelection(TextSelection.create(tr.doc, target.pos + 1)).scrollIntoView())
+  const blankIndex = start > 0 ? 1 : 0
+  let blankPos = target.pos
+  for (let index = 0; index < blankIndex; index += 1) blankPos += parts[index]!.nodeSize
+  dispatch(tr.setSelection(TextSelection.create(tr.doc, blankPos + 1)).scrollIntoView())
   return true
 }
 

@@ -6,9 +6,12 @@ import { $prose } from '@milkdown/utils'
 import { describe, expect, it } from 'vitest'
 import {
   canonicalizeMdiClipboardSlice,
+  decodeMdiClipboardSlice,
+  encodeMdiClipboardSlice,
   createMdiEditorMapping,
   getMdi,
   MDI_CLIPBOARD_MIME,
+  MDI_CLIPBOARD_SLICE_MIME,
   mdiClipboard,
   mdiInputRules,
   mapMdiSourceSpanToEditorRanges,
@@ -37,6 +40,22 @@ const handleText = (source: string, plugins = [mdiInputRules()]) => createEditor
 })
 
 describe('opt-in MDI input and clipboard acceptance', () => {
+  it('round-trips structured clipboard slices and rejects malformed payloads', async () => {
+    const editor = await createEditor('一\n\n二')
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx)
+      const slice = view.state.doc.slice(0, view.state.doc.content.size)
+      const encoded = encodeMdiClipboardSlice(slice)(ctx)
+      expect(encoded).not.toBeNull()
+      const payload = JSON.parse(encoded!)
+      expect(payload).toMatchObject({ version: 1, mdi: getMdi()(ctx), openStart: 0, openEnd: 0 })
+      expect(decodeMdiClipboardSlice(encoded!)(ctx)?.openStart).toBe(0)
+      expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, version: 2 }))(ctx)).toBeNull()
+      expect(decodeMdiClipboardSlice('{malformed')(ctx)).toBeNull()
+      expect(MDI_CLIPBOARD_SLICE_MIME).toContain('slice')
+    })
+  })
+
   it('keeps literal MDI and Markdown-looking text literal after save and reopen', async () => {
     const literal = '{東京|とうきょう} [[em:強調]] ^12^ **太字** [リンク](https://example.test)'
     const editor = await createEditor('')

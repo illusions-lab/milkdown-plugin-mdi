@@ -95,6 +95,25 @@ describe('Rust-provenance editor mapping', () => {
     expect(results[2]!.matches[0]!.to - results[2]!.matches[0]!.from).toBe(11)
   })
 
+  it('maps a zero-width source span to the containing editor range', async () => {
+    const editor = await createEditor('point')
+    const snapshot = editor.action(createMdiEditorMapping())
+    const resolver = vi.mocked(mdiRuntime.resolveMdiSourceSpans)
+    resolver.mockReturnValueOnce([{
+      coverage: 'complete',
+      matches: [{
+        blockIndex: 1,
+        kind: 'blockText',
+        relation: 'exact',
+        range: { start: '1:1', end: '1:1' },
+      }],
+    }] as never)
+    const result = mapMdiSourceSpanToEditorRanges(snapshot, { startByte: 0, endByte: 0 })
+
+    expect(result.matches).toHaveLength(1)
+    expect(result.matches[0]!.from).toBe(result.matches[0]!.to)
+  })
+
   it('crosses the Rust batch resolver exactly once for many source spans', async () => {
     const editor = await createEditor('one two three')
     const snapshot = editor.action(createMdiEditorMapping())
@@ -195,6 +214,20 @@ describe('Rust-provenance editor mapping', () => {
           }),
         ).toEqual({ coverage: 'none', matches: [], reason: 'stale' })
       }
+    })
+  })
+
+  it('does not index provenance for a non-canonical live document shape', async () => {
+    const editor = await createEditor('stable')
+    editor.action((ctx) => {
+      const parser = ctx.get(parserCtx)
+      ctx.set(parserCtx, (source: string) => parser(`${source}\n\nextra`))
+    })
+
+    const snapshot = editor.action(createMdiEditorMapping())
+    expect(mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, 'stable'))).toMatchObject({
+      matches: [],
+      reason: 'unmapped',
     })
   })
 
