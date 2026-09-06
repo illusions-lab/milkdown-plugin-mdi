@@ -23,6 +23,7 @@ const source = [
   '# 見出し',
   '',
   '前{東京|とうきょう}後  **強調**',
+  '前[[warichu:一[[no-break:二**三**四]][[warichu:内注]]**e**́五[[br]][[br]]六]]後',
   'Invalid: [[kern:abc:text]] and ^too long^.',
   'Escaped literal: \\{東京|とうきょう} and \\*literal\\*.',
   '',

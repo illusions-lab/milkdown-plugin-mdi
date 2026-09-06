@@ -160,3 +160,25 @@ Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or pull
 ## License
 
 MIT © Iktahana
+
+### Automatic warichu
+
+Warichu uses an editable inline node with one ProseMirror content DOM. Rust
+chooses the two-row fragments; browser measurements position existing editable
+text and reserve space with empty, inaccessible widgets. Note glyphs stay at
+50% of body size in horizontal and vertical writing. Nested annotations and
+ruby can increase a row's block extent; adjacent rows have no added gap.
+Automatic visual boundaries never become `[[br]]` or document edits.
+
+Use `mdiEditCommand({ type: 'setWarichu' })` and
+`mdiEditCommand({ type: 'removeWarichu' })`; legacy warichu mark operations and
+`inspectMdiSelection(state).marks.warichu` remain available. IME composition
+freezes geometry; Enter outside composition announces automatic layout.
+
+`serializeMdiClipboardHtml(slice)(ctx)` returns portable static HTML for the
+selection. Clipboard v2 carries semantic ancestor paths and inline/block shape;
+v1 remains readable with canonical-MDI fallback where depths are ambiguous.
+Migrate saved ProseMirror JSON through the old schema's canonical MDI serializer
+before upgrading; canonical MDI documents need no migration. Exact proportional
+font balancing and native OS IME coverage are not claimed by synthetic browser
+tests.

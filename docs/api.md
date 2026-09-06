@@ -186,3 +186,30 @@ This package does not provide `getMdiIR()`, `getMdiText()`, `getMdiTextBlocks()`
 
 The mapping API consumes upstream analysis results but does not proxy or rebuild
 them.
+
+### Editable warichu schema migration (0.7)
+
+Warichu is an inline node with editable inline children and a single content DOM.
+Use `{ type: 'setWarichu' }` and `{ type: 'removeWarichu' }` with `mdiEditCommand`.
+The legacy `setInlineMark` / `removeInlineMark` operations with `mark: 'warichu'`
+forward to the same commands. `inspectMdiSelection(state).marks.warichu` remains
+available, including an insertion point inside the annotation. Removing warichu
+unwraps its content. Canonical MDI remains the portable representation; to migrate
+saved ProseMirror JSON, serialize it using the old schema before loading the MDI
+with this version. Old JSON cannot be loaded directly into the new schema.
+
+Structured clipboard v2 records semantic ancestor paths. The decoder accepts v1;
+when numeric depths cannot be safely interpreted after schema migration, it uses
+the canonical MDI document. The default plain clipboard representation remains
+canonical MDI.
+
+`serializeMdiClipboardHtml(slice)(ctx)` returns the selected source as a static
+HTML fragment with inline ruby, emphasis, no-break, warichu, blank and print
+styles. No editor geometry or duplicated editable content is included. v2
+`contentKind` distinguishes closed inline slices from block slices.
+
+Presentation measures actual advances without overriding author tracking.
+Resizing and font/writing-mode changes call Rust again; nested note and ruby
+heights expand their containing row and retain zero added row spacing.
+During composition only source edits are applied; positions stay frozen until
+composition ends. Enter emits `mdi-warichu-auto-layout` and a visible live status.

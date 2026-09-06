@@ -15,8 +15,9 @@ const placeholderNonce = (() => {
   if (words.some(Boolean)) return [...words].map((word) => word.toString(16).padStart(8, '0')).join('')
   return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
 })()
-const placeholderPrefix = `<!--illusions-mdi-literal-${placeholderNonce}:`
-const placeholderPattern = new RegExp(`${placeholderPrefix}([0-9a-f]*)-->`, 'g')
+// Use inert text: HTML comments can be discarded by inline MDI lowering.
+const placeholderPrefix = `\uE000illusionsMdiLiteral${placeholderNonce}`
+const placeholderPattern = new RegExp(`${placeholderPrefix}([0-9a-f]*)\uE001`, 'g')
 
 const escapeLiteralText = (value: string) => [...value].map((character) => (
   character === '《' || character === '》' || /[!-/:-@[-`{-~]/.test(character)
@@ -28,7 +29,7 @@ export const literalPlaceholder = (value: string) => {
   const encoded = [...new TextEncoder().encode(value)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
-  return `${placeholderPrefix}${encoded}-->`
+  return `${placeholderPrefix}${encoded}\uE001`
 }
 
 const restoreLiteralPlaceholders = (source: string) => source.replace(

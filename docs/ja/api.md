@@ -151,3 +151,26 @@ custom MIME を書けない環境でも `text/plain` は維持され、同一 ed
 このパッケージは `getMdiIR()`、`getMdiText()`、`getMdiTextBlocks()`、検索 API を提供しません。解析、テキスト投影、text block、diagnostics、source map は MDI の責務であり、`@illusions-lab/mdi` を直接利用してください。
 
 mapping API は upstream の解析結果を利用しますが、それを proxy または再構築しません。
+
+### 編集可能な割注へのスキーマ移行（0.7）
+
+割注は、インライン子要素を持つ編集可能なインラインノードになります。
+`mdiEditCommand` に `{ type: 'setWarichu' }` または
+`{ type: 'removeWarichu' }` を渡します。従来の `setInlineMark` /
+`removeInlineMark` の `mark: 'warichu'` も同じ操作に転送されます。
+割注内のカーソルでも `inspectMdiSelection(state).marks.warichu` を取得でき、
+解除すると内容を残して割注を外します。
+
+保存データには canonical MDI を使用してください。古い ProseMirror JSON は
+旧スキーマで MDI にシリアライズしてから、このバージョンで読み込みます。
+構造化クリップボード v2 は意味上の祖先パスを保存します。v1 も読み込めますが、
+深さを安全に解釈できない場合は canonical MDI にフォールバックします。
+
+`serializeMdiClipboardHtml(slice)(ctx)` は選択内容の静的な HTML 断片を返し、
+ルビ、傍点、禁則、割注、空行、改ページの必要なスタイルを含めます。
+v2 の `contentKind` はインライン断片とブロック断片を区別します。
+
+割注は本文の50%の字級で2行に配置されます。入れ子の割注やルビが高い場合は
+その行の高さを確保し、行の間に余分な間隔を追加しません。自動分割は文書へ
+書き戻されません。IME変換中は表示位置を固定し、終了後に再配置します。
+Enter は変換中以外で自動配置の案内を表示し、`mdi-warichu-auto-layout` を送出します。

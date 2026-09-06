@@ -14,6 +14,7 @@ import { $prose } from '@milkdown/utils'
 import { Plugin } from '@milkdown/prose/state'
 import type { MarkdownNode } from '@milkdown/transformer'
 import { mdastToMdiSource } from 'mdast-util-mdi'
+import { mdiWarichuPresentation } from './warichu-presentation.js'
 import { installMdiProvenanceParser } from './provenance.js'
 import {
   canonicalizeMdiPreservingLiteralText,
@@ -284,7 +285,31 @@ const wrappingMark = (
 }))
 
 const mdiNoBreakSchema = wrappingMark('mdiNoBreak', 'mdiNoBreak', 'mdi-no-break')
-const mdiWarichuSchema = wrappingMark('mdiWarichu', 'mdiWarichu', 'mdi-warichu')
+const mdiWarichuSchema = $node('mdiWarichu', () => ({
+  inline: true,
+  group: 'inline',
+  content: 'inline*',
+  atom: false,
+  selectable: false,
+  parseDOM: [{ tag: 'span.mdi-warichu' }],
+  toDOM: () => ['span', { class: 'mdi-warichu', 'data-mdi-warichu': '' }, 0],
+  parseMarkdown: {
+    match: (node) => node.type === 'mdiWarichu',
+    runner: (state, node, type) => {
+      state.openNode(type)
+      state.next(node.children)
+      state.closeNode()
+    },
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'mdiWarichu',
+    runner: (state, node) => {
+      state.openNode('mdiWarichu')
+      state.next(node.content)
+      state.closeNode()
+    },
+  },
+}))
 
 const mdiKernSchema = $markSchema('mdiKern', () => ({
   attrs: {
@@ -595,7 +620,8 @@ const mdiPlugins: MilkdownPlugin[] = [
   ...mdiTcySchema,
   ...mdiBotenSchema,
   ...mdiNoBreakSchema,
-  ...mdiWarichuSchema,
+  mdiWarichuSchema,
+  mdiWarichuPresentation,
   ...mdiKernSchema,
   mdiBreakSchema,
   mdiPagebreakSchema,

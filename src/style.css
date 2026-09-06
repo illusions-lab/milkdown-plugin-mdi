@@ -26,7 +26,7 @@
 }
 
 .mdi-warichu {
-  font-size: 0.65em;
+  font-size: 0.5em;
   line-height: 1;
 }
 
@@ -75,3 +75,9 @@
 [style*="writing-mode: vertical"] .mdi-boten {
   text-emphasis-position: over right;
 }
+
+.ProseMirror:has(.mdi-warichu) { position: relative; }
+.mdi-warichu-space { display: inline-block; vertical-align: middle; }
+.mdi-warichu:has(.mdi-warichu-space) { font-size: inherit; }
+
+.mdi-warichu .mdi-warichu { font-size: inherit; }

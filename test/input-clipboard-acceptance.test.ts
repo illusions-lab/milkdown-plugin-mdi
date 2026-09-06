@@ -17,6 +17,7 @@ import {
   mapMdiSourceSpanToEditorRanges,
   parseMdiClipboard,
   serializeMdiClipboard,
+  serializeMdiClipboardHtml,
 } from '../src/index'
 import { createEditor } from './harness'
 
@@ -48,9 +49,13 @@ describe('opt-in MDI input and clipboard acceptance', () => {
       const encoded = encodeMdiClipboardSlice(slice)(ctx)
       expect(encoded).not.toBeNull()
       const payload = JSON.parse(encoded!)
-      expect(payload).toMatchObject({ version: 1, mdi: getMdi()(ctx), openStart: 0, openEnd: 0 })
+      expect(payload).toMatchObject({ version: 2, mdi: getMdi()(ctx), startAncestors: [], endAncestors: [] })
       expect(decodeMdiClipboardSlice(encoded!)(ctx)?.openStart).toBe(0)
-      expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, version: 2 }))(ctx)).toBeNull()
+      expect(decodeMdiClipboardSlice(JSON.stringify({version: 1, mdi: payload.mdi, openStart: 0, openEnd: 0}))(ctx)?.openStart).toBe(0)
+      expect(decodeMdiClipboardSlice(JSON.stringify({...payload, startAncestors: ['unknown']}))(ctx)?.openStart).toBe(0)
+      expect(decodeMdiClipboardSlice(JSON.stringify({ version: 1, mdi: '[[warichu:注記]]', openStart: 1, openEnd: 1 }))(ctx)?.openStart).toBe(0)
+      expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, startAncestors: [2] }))(ctx)).toBeNull()
+      expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, version: 99 }))(ctx)).toBeNull()
       expect(decodeMdiClipboardSlice('{malformed')(ctx)).toBeNull()
       expect(MDI_CLIPBOARD_SLICE_MIME).toContain('slice')
     })
@@ -396,5 +401,70 @@ describe('opt-in MDI input and clipboard acceptance', () => {
       expect(ctx.get(inputRulesCtx)).toHaveLength(rulesBefore)
       expect(ctx.get(prosePluginsCtx)).toHaveLength(pluginsBefore)
     })
+  })
+})
+
+it('exports selected ruby and Japanese layout as self-contained HTML', async () => {
+  const editor = await createEditor('{東京|とうきょう} ^12^ [[em:注]] [[no-break:禁則]] [[warichu:注記]]')
+  editor.action(ctx => {
+    const doc = ctx.get(editorViewCtx).state.doc
+    const html = serializeMdiClipboardHtml(doc.slice(0, doc.content.size))(ctx)!
+    const container = document.createElement('div')
+    container.innerHTML = html
+    expect(container.querySelector('html,head,script')).toBeNull()
+    expect(container.querySelector<HTMLElement>('rt')?.style.fontSize).toBe('0.5em')
+    expect(container.querySelector<HTMLElement>('.mdi-nobr')?.style.whiteSpace).toBe('nowrap')
+    expect(container.querySelector<HTMLElement>('.mdi-warichu')?.style.fontSize).toBe('0.5em')
+    expect(container.querySelector<HTMLElement>('.mdi-warichu-fragment')?.style.display).toBe('inline-flex')
+    expect(container.textContent).toContain('禁則')
+  })
+})
+
+it('round-trips closed inline slices without inserting a synthetic paragraph', async () => {
+  const editor = await createEditor('')
+  editor.action(ctx => {
+    const state = ctx.get(editorViewCtx).state
+    const slice = new Slice(Fragment.from(state.schema.text('注記')), 0, 0)
+    const encoded = encodeMdiClipboardSlice(slice)(ctx)!
+    const decoded = decodeMdiClipboardSlice(encoded)(ctx)!
+    expect(decoded.content.firstChild?.isText).toBe(true)
+    expect(decoded.content.eq(slice.content)).toBe(true)
+  })
+})
+
+it('keeps partially open inline warichu ancestry and falls back on incompatible transport shapes', async () => {
+  const editor = await createEditor('[[warichu:注記]]')
+  editor.action(ctx => {
+    const state = ctx.get(editorViewCtx).state
+    const note = state.doc.firstChild!.firstChild!
+    const slice = new Slice(Fragment.from(note), 1, 1)
+    const encoded = encodeMdiClipboardSlice(slice)(ctx)!
+    const payload = JSON.parse(encoded)
+    expect(payload).toMatchObject({ contentKind: 'inline', startAncestors: ['warichu'], endAncestors: ['warichu'] })
+    const decoded = decodeMdiClipboardSlice(encoded)(ctx)!
+    expect(decoded.openStart).toBe(1)
+    expect(decoded.openEnd).toBe(1)
+    expect(decoded.content.eq(slice.content)).toBe(true)
+    expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, mdi: '一\n\n二' }))(ctx)?.openStart).toBe(0)
+    expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, endAncestors: ['unknown'] }))(ctx)?.openEnd).toBe(0)
+    expect(decodeMdiClipboardSlice(JSON.stringify({ version: 1, mdi: '一', openStart: -1, openEnd: 1 }))(ctx)?.openStart).toBe(0)
+    expect(decodeMdiClipboardSlice(JSON.stringify({ ...payload, endAncestors: {} }))(ctx)).toBeNull()
+  })
+})
+
+it('rejects invalid public slice depths and unsupported structured payloads without changing the editor', async () => {
+  const editor = await createEditor('本文')
+  editor.action(ctx => {
+    const state = ctx.get(editorViewCtx).state
+    const before = state.doc
+    const invalid = new Slice(Fragment.from(state.schema.text('注')), 2, 0)
+    expect(encodeMdiClipboardSlice(invalid)(ctx)).toBeNull()
+    expect(canonicalizeMdiClipboardSlice(invalid, { source: 'rich' })(ctx)).toBeNull()
+    expect(canonicalizeMdiClipboardSlice(new Slice(Fragment.from(state.schema.text('注')), 0, 0), { source: 'rich' })(ctx)?.content.firstChild?.text).toBe('注')
+    for (const payload of [null, 42, { version: 3, mdi: '注' }, { version: 2, mdi: 42 },
+      { version: 2, mdi: '---\nmdi: "3.0"\n---\n\n注', startAncestors: [], endAncestors: [] }]) {
+      expect(decodeMdiClipboardSlice(JSON.stringify(payload))(ctx)).toBeNull()
+    }
+    expect(ctx.get(editorViewCtx).state.doc).toBe(before)
   })
 })

@@ -2,6 +2,12 @@
 
 ## 0.7.0 - 2026-09-04
 
+- Replace the warichu mark with an editable inline node; add `setWarichu` / `removeWarichu` while preserving legacy command and selection-query aliases.
+- Apply Rust-owned two-row splits through decorations and empty reservation widgets, with measured font/tracking advances, nested annotation extents and composition freezing.
+- Preserve author breaks and canonical source during reflow; support exact glyph hits, drag selections, boundary navigation and grapheme deletion.
+- Add portable selected-content HTML and semantic ancestor paths in clipboard v2, retaining safe v1 fallback and closed inline slice shape.
+- Preserve escaped literal text following warichu during prepared and normal parsing.
+
 - Add structured-clone-safe `prepareMdiDocument()` output for Worker-owned initial parsing.
 - Add a Worker-safe `./prepared` entrypoint that excludes Milkdown and ProseMirror.
 - Add `mdi({ initialDocument })` with strict IR/provenance/transport version validation.
