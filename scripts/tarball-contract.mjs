@@ -25,6 +25,10 @@ try {
     'package/dist/input-clipboard.d.ts',
     'package/dist/mapping.js',
     'package/dist/mapping.d.ts',
+    'package/dist/prepared.js',
+    'package/dist/prepared.d.ts',
+    'package/dist/prepared-entry.js',
+    'package/dist/prepared-entry.d.ts',
     'package/dist/style.css',
     'package/CHANGELOG.md',
   ]) {

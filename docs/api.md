@@ -10,6 +10,9 @@ import {
   mdiClipboard,
   mdiEditCommand,
   mdiInputRules,
+  prepareMdiDocument,
+  type PreparedMdiDocument,
+  type StructuredCloneSafeMdast,
 } from '@illusions-lab/milkdown-plugin-mdi'
 ```
 
@@ -17,11 +20,73 @@ import {
 
 Initializes the MDI JavaScript binding used by the parser and canonical serializer. In browser applications, await it before creating a Milkdown editor. This package re-exports it from `@illusions-lab/mdi`.
 
-## `mdi()`
+## `prepareMdiDocument(source)`
+
+Completes the Rust parse, canonicalization, and Milkdown mdast normalization in
+the current execution context and returns `Promise<PreparedMdiDocument>`. For a
+large initial document, call it in a module Worker after `initializeMdi()` and
+send the result to the renderer with `postMessage()`.
+
+```ts
+interface PreparedMdiDocument {
+  version: 1
+  mdiIrVersion: string
+  provenanceVersion: string
+  canonicalSource: string
+  document: StructuredCloneSafeMdast
+  frontmatter?: string
+  diagnostics: readonly MdiDiagnostic[]
+  stats: {
+    sourceUtf16Length: number
+    sourceBytes: number
+    blockCount: number
+  }
+}
+```
+
+The object contains only structured-clone-safe data. Diagnostics describe the
+original input; mdast provenance describes `canonicalSource`. Keep the original
+source separately when an application needs to display an error or offer a
+source-safe editing mode.
+
+## `mdi(options?)`
 
 Returns Milkdown plugins that register the MDI remark adapter, inline schemas,
 blank/pagebreak block schemas, and an extended CommonMark paragraph schema for
 indent/bottom attributes. Use it alongside Milkdown's CommonMark preset.
+
+Pass `{ initialDocument: prepared }` to build the initial ProseMirror document
+from a `PreparedMdiDocument`. This path validates the transport, MDI IR, and
+provenance versions, and fails explicitly when they are incompatible. It does
+not canonicalize the source, call the Rust parser, or run Remark parsing again.
+The plugin rebuilds its transient provenance map while schema-bound
+ProseMirror nodes are created.
+
+```ts
+// module Worker
+import {
+  initializeMdi,
+  prepareMdiDocument,
+} from '@illusions-lab/milkdown-plugin-mdi/prepared'
+
+await initializeMdi()
+postMessage(await prepareMdiDocument(source))
+
+// renderer
+const editor = await Editor.make()
+  .use(commonmark)
+  .use(mdi({ initialDocument: prepared }))
+  .create()
+```
+
+The `./prepared` subpath is the Worker-safe entrypoint. It does not load
+Milkdown, ProseMirror, or their DOM-only modules. The same functions remain
+available from the package root for backward-compatible renderer usage.
+
+`mdi()` without options remains backward compatible. Later edits, paste, and
+serialization retain the existing synchronous behavior. Applications should
+surface preparation and version errors instead of synchronously reparsing on
+the renderer thread.
 
 ## `getMdi()`
 

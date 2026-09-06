@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks'
 import { editorStateCtx } from '@milkdown/core'
 import { describe, expect, it } from 'vitest'
+import { prepareMdiDocument } from '../src/index'
 import { createEditor } from './harness'
 
 const runPerformanceTests = process.env.RUN_PERFORMANCE_TESTS === '1'
@@ -33,26 +34,44 @@ describe.runIf(runPerformanceTests)('large-document loading performance', () => 
   it('loads a one-million-character MDI book within the configured budget', async () => {
     const source = makeBookSource(1_000_000)
     const startedAt = performance.now()
-    const editor = await createEditor(source)
-    const elapsedMs = performance.now() - startedAt
+    const prepared = await prepareMdiDocument(source)
+    const preparedAt = performance.now()
+    const editor = await createEditor(prepared.canonicalSource, [], { initialDocument: prepared })
+    const mountedAt = performance.now()
+    const preparationMs = preparedAt - startedAt
+    const mountMs = mountedAt - preparedAt
+    const elapsedMs = mountedAt - startedAt
     const textLength = editor.action((ctx) => ctx.get(editorStateCtx).doc.textContent.length)
 
-    console.info(`[performance] 1M characters: ${elapsedMs.toFixed(1)} ms`)
+    console.info(
+      `[performance] 1M characters: prepare ${preparationMs.toFixed(1)} ms; mount ${mountMs.toFixed(1)} ms; total ${elapsedMs.toFixed(1)} ms`,
+    )
     expect(source.length).toBeGreaterThanOrEqual(1_000_000)
     expect(textLength).toBeGreaterThan(990_000)
+    expect(preparationMs).toBeGreaterThan(0)
+    expect(mountMs).toBeGreaterThan(0)
     expect(elapsedMs).toBeLessThan(maximumLoadMs('1M'))
   }, 90_000)
 
   it('loads a ten-million-character MDI book within the configured budget', async () => {
     const source = makeBookSource(10_000_000)
     const startedAt = performance.now()
-    const editor = await createEditor(source)
-    const elapsedMs = performance.now() - startedAt
+    const prepared = await prepareMdiDocument(source)
+    const preparedAt = performance.now()
+    const editor = await createEditor(prepared.canonicalSource, [], { initialDocument: prepared })
+    const mountedAt = performance.now()
+    const preparationMs = preparedAt - startedAt
+    const mountMs = mountedAt - preparedAt
+    const elapsedMs = mountedAt - startedAt
     const textLength = editor.action((ctx) => ctx.get(editorStateCtx).doc.textContent.length)
 
-    console.info(`[performance] 10M characters: ${elapsedMs.toFixed(1)} ms`)
+    console.info(
+      `[performance] 10M characters: prepare ${preparationMs.toFixed(1)} ms; mount ${mountMs.toFixed(1)} ms; total ${elapsedMs.toFixed(1)} ms`,
+    )
     expect(source.length).toBeGreaterThanOrEqual(10_000_000)
     expect(textLength).toBeGreaterThan(9_900_000)
+    expect(preparationMs).toBeGreaterThan(0)
+    expect(mountMs).toBeGreaterThan(0)
     expect(elapsedMs).toBeLessThan(maximumLoadMs('10M'))
   }, 360_000)
 })

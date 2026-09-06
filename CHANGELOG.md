@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0 - 2026-09-04
+
+- Add structured-clone-safe `prepareMdiDocument()` output for Worker-owned initial parsing.
+- Add a Worker-safe `./prepared` entrypoint that excludes Milkdown and ProseMirror.
+- Add `mdi({ initialDocument })` with strict IR/provenance/transport version validation.
+- Build initial ProseMirror provenance directly from prepared mdast without renderer-side canonicalization or parsing.
+
 ## 0.6.0 - 2026-09-04
 
 - Add atomic blank-paragraph insertion with selection and nested-container safety.

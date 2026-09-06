@@ -28,8 +28,13 @@ Future releases are published by the workflow through OIDC and do not require `N
 
 ```sh
 npm view @illusions-lab/milkdown-plugin-mdi version dist-tags --json
-npm install @illusions-lab/milkdown-plugin-mdi@0.1.0
+PACKAGE_VERSION=$(node -p "require('./package.json').version")
+npm install @illusions-lab/milkdown-plugin-mdi@$PACKAGE_VERSION
 npm audit signatures
 ```
 
-Confirm that the installed package exposes only `mdi`, `getMdi`, and `initializeMdi`, that `style.css` resolves, and that the published dependency graph exposes the expected stable `@illusions-lab/mdi` analysis APIs directly.
+Confirm that the installed package exposes the documented editor, mapping,
+editing, clipboard, and prepared-document APIs; that `prepareMdiDocument()` can
+be structured-cloned and consumed by `mdi({ initialDocument })`; that
+`style.css` resolves; and that the published dependency graph exposes the
+expected stable `@illusions-lab/mdi` analysis APIs directly.

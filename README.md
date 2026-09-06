@@ -60,6 +60,39 @@ const editor = await Editor.make()
 const canonicalSource = editor.action(getMdi())
 ```
 
+### Preparing large initial documents in a Worker
+
+`0.7.0` adds a structured-clone-safe initial-document path. Run the complete
+Rust parse and mdast normalization in a module Worker, then give Milkdown the
+prepared result. The initial editor build validates all transport versions and
+does not canonicalize or parse the source again.
+
+```ts
+// Worker
+import {
+  initializeMdi,
+  prepareMdiDocument,
+} from '@illusions-lab/milkdown-plugin-mdi/prepared'
+
+await initializeMdi()
+const prepared = await prepareMdiDocument(source)
+postMessage(prepared)
+
+// Renderer (after receiving the Worker message)
+const editor = await Editor.make()
+  .use(commonmark)
+  .use(mdi({ initialDocument: prepared }))
+  .create()
+```
+
+Use the `./prepared` entrypoint inside a Worker. It intentionally excludes
+Milkdown, ProseMirror, and their DOM-only modules.
+
+Treat an incompatible prepared-document error as an open failure. Do not fall
+back to synchronous initial parsing on the UI thread. Calling `mdi()` without
+options remains supported for small documents and for synchronous editing,
+paste, and serialization behavior.
+
 Browser consumers must await `initializeMdi()` before creating the editor. It is idempotent and safe to call more than once.
 
 `getMarkdown()` from `@milkdown/utils` emits valid MDI through the registered remark handlers. Use `getMdi()` when persisting a `.mdi` file: it additionally runs the Markdown through Rust's canonical serializer.

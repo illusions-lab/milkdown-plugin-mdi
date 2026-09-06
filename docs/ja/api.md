@@ -10,6 +10,9 @@ import {
   mdiClipboard,
   mdiEditCommand,
   mdiInputRules,
+  prepareMdiDocument,
+  type PreparedMdiDocument,
+  type StructuredCloneSafeMdast,
 } from '@illusions-lab/milkdown-plugin-mdi'
 ```
 
@@ -17,11 +20,70 @@ import {
 
 parser と canonical serializer が使う MDI JavaScript binding を初期化します。ブラウザでは Milkdown editor を作る前に await してください。このパッケージは `@illusions-lab/mdi` から再エクスポートしています。
 
-## `mdi()`
+## `prepareMdiDocument(source)`
+
+Rust parse、canonicalization、Milkdown 用 mdast normalization を現在の実行
+context で完了し、`Promise<PreparedMdiDocument>` を返します。大きな初期文書では
+module Worker 内で `initializeMdi()` の後に呼び、結果を `postMessage()` で renderer
+へ渡してください。
+
+```ts
+interface PreparedMdiDocument {
+  version: 1
+  mdiIrVersion: string
+  provenanceVersion: string
+  canonicalSource: string
+  document: StructuredCloneSafeMdast
+  frontmatter?: string
+  diagnostics: readonly MdiDiagnostic[]
+  stats: {
+    sourceUtf16Length: number
+    sourceBytes: number
+    blockCount: number
+  }
+}
+```
+
+返される object は structured clone 可能なデータだけで構成されます。diagnostics は
+元の入力を、mdast provenance は `canonicalSource` を参照します。error 表示や source
+safe mode が必要な application は元の source を別に保持してください。
+
+## `mdi(options?)`
 
 MDI remark adapter、inline schema、blank / pagebreak の block schema、
 indent / bottom attr 用に拡張した CommonMark paragraph schema を登録する
 Milkdown plugin を返します。Milkdown の CommonMark preset と併用してください。
+
+初期 ProseMirror document を準備済みデータから構築するには
+`{ initialDocument: prepared }` を渡します。この経路は transport、MDI IR、provenance
+の version を検証し、互換性がなければ明示的に失敗します。source の canonicalize、
+Rust parser、Remark parse は再実行しません。schema に対応した ProseMirror node を
+構築するときに transient provenance map を再生成します。
+
+```ts
+// module Worker
+import {
+  initializeMdi,
+  prepareMdiDocument,
+} from '@illusions-lab/milkdown-plugin-mdi/prepared'
+
+await initializeMdi()
+postMessage(await prepareMdiDocument(source))
+
+// renderer
+const editor = await Editor.make()
+  .use(commonmark)
+  .use(mdi({ initialDocument: prepared }))
+  .create()
+```
+
+`./prepared` subpath は Worker-safe な entrypoint です。Milkdown、ProseMirror、
+および DOM 専用 module を読み込みません。後方互換のため、同じ関数は package root
+からも利用できます。
+
+引数なしの `mdi()` は後方互換です。以後の編集、paste、serialization は従来の同期
+動作を維持します。準備や version 検証の失敗時に renderer thread で同期 parse へ
+fallback せず、application の open error として扱ってください。
 
 ## `getMdi()`
 
