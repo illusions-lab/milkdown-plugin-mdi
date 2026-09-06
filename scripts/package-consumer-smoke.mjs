@@ -59,6 +59,9 @@ const browserSmoke = async () => {
           cause: error,
         })
       })
+      await page.waitForFunction(() => document.querySelector('#warichu-consumer .mdi-warichu-editable-line[data-mdi-row="1"]'))
+      const noteGeometry = await page.locator('#warichu-consumer .mdi-warichu-space').evaluateAll(elements => elements.every(element => !element.textContent && element.getAttribute('aria-hidden') === 'true'))
+      if (!noteGeometry) throw new Error(`${name} packed warichu widgets are not empty presentation spacers`)
       const result = await page.evaluate(() => ({
         ...window.__PACKAGE_CONSUMER__,
         tcy: getComputedStyle(document.querySelector('.mdi-tcy')).textCombineUpright,
@@ -269,6 +272,12 @@ try {
         clipboardParsed: clipboardParsed !== null,
         blockJson,
       }
+      const noteRoot = document.createElement('div')
+      noteRoot.id = 'warichu-consumer'
+      noteRoot.style.cssText = 'font-size:20px;width:180px'
+      document.body.append(noteRoot)
+      const noteEditor = Editor.make().config(ctx => { ctx.set(rootCtx, noteRoot); ctx.set(defaultValueCtx, '前[[warichu:一二三四五六七八九十]]後') }).use(commonmark).use(mdi())
+      await noteEditor.create()
     }
     void start()
   `)
