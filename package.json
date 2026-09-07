@@ -91,16 +91,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@illusions-lab/mdi": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-2.0.3.tgz",
-    "@illusions-lab/mdi-cli": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-cli-2.0.18.tgz",
-    "@illusions-lab/mdi-core": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-core-2.0.3.tgz",
-    "@illusions-lab/mdi-export-profile": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-export-profile-2.0.0.tgz",
-    "@illusions-lab/mdi-remark": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-remark-2.0.18.tgz",
-    "@illusions-lab/mdi-to-docx": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-to-docx-2.0.17.tgz",
-    "@illusions-lab/mdi-to-epub": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-to-epub-2.0.18.tgz",
-    "@illusions-lab/mdi-to-hast": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-to-hast-2.0.18.tgz",
-    "@illusions-lab/mdi-to-html": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-to-html-2.0.18.tgz",
-    "@illusions-lab/mdi-to-pdf": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/illusions-lab-mdi-to-pdf-2.0.18.tgz",
-    "mdast-util-mdi": "file:/private/tmp/mdi-warichu-release-fbfaf64-node/mdast-util-mdi-2.0.16.tgz"
+    "@illusions-lab/mdi": "^2.0.26",
+    "@illusions-lab/mdi-remark": "^2.0.41",
+    "mdast-util-mdi": "^2.0.21"
   }
 }
