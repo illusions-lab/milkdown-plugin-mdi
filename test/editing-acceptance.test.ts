@@ -101,8 +101,8 @@ describe('typed MDI editing acceptance', () => {
     editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
       expect(view.state.selection).toBeInstanceOf(TextSelection)
-      expect(view.state.selection.from).toBe(1)
-      expect(view.state.selection.to).toBe(3)
+      expect(view.state.selection.from).toBe(mark === 'warichu' ? 2 : 1)
+      expect(view.state.selection.to).toBe(mark === 'warichu' ? 4 : 3)
       expect(inspectMdiSelection(view.state).marks[mark]).toBeTruthy()
       expect(mdiEditCommand({ type: 'removeInlineMark', mark })(view.state, view.dispatch)).toBe(true)
       expect(getMdi()(ctx)).not.toContain(expected)

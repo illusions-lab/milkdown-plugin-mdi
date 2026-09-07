@@ -8,6 +8,8 @@ export type MdiInlineMark = 'tcy' | 'boten' | 'noBreak' | 'warichu' | 'kern'
 export type MdiEditOperation =
   | { type: 'setRuby'; reading: MdiRubyReading }
   | { type: 'removeRuby' }
+  | { type: 'setWarichu' }
+  | { type: 'removeWarichu' }
   | { type: 'setInlineMark'; mark: MdiInlineMark; value?: string }
   | { type: 'removeInlineMark'; mark: MdiInlineMark }
   | { type: 'insertBreak' }
@@ -113,7 +115,68 @@ const removeRuby: Command = (state, dispatch) => {
   return true
 }
 
+const warichuAncestor = (state: EditorState) => {
+  const { $from } = state.selection
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    if ($from.node(depth).type.name === 'mdiWarichu') {
+      return { node: $from.node(depth), pos: $from.before(depth) }
+    }
+  }
+  return null
+}
+
+const setWarichu: Command = (state, dispatch) => {
+  const type = state.schema.nodes.mdiWarichu
+  const { from, to, $from, $to } = state.selection
+  if (!type || state.selection instanceof NodeSelection || warichuAncestor(state)) return false
+  const ranges: Array<{ from: number; to: number }> = []
+  if ($from.sameParent($to) && $from.parent.inlineContent) ranges.push({ from, to })
+  else state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isTextblock) return
+    const start = Math.max(from, pos + 1)
+    const end = Math.min(to, pos + node.nodeSize - 1)
+    if (start < end) ranges.push({ from: start, to: end })
+    return false
+  })
+  if (!ranges.length || ranges.some(range => !type.validContent(state.doc.slice(range.from, range.to).content))) return false
+  if (!dispatch) return true
+  const tr = state.tr
+  for (const range of [...ranges].reverse()) {
+    tr.replaceWith(range.from, range.to, type.create(null, state.doc.slice(range.from, range.to).content))
+  }
+  tr.setSelection(TextSelection.create(tr.doc, ranges[0]!.from + 1, ranges.at(-1)!.to + ranges.length * 2 - 1))
+  dispatch(tr.scrollIntoView())
+  return true
+}
+
+const removeWarichu: Command = (state, dispatch) => {
+  const targets: Array<{ node: ProseNode; pos: number }> = []
+  const ancestor = warichuAncestor(state)
+  if (ancestor) targets.push(ancestor)
+  if (!state.selection.empty) state.doc.nodesBetween(state.selection.from, state.selection.to, (node, pos) => {
+    if (node.type.name !== 'mdiWarichu') return
+    if (ancestor && pos >= ancestor.pos && pos < ancestor.pos + ancestor.node.nodeSize) return false
+    targets.push({ node, pos })
+    return false
+  })
+  if (!targets.length) return false
+  if (!dispatch) return true
+  const tr = state.tr
+  for (const { node, pos } of targets.reverse()) {
+    const from = tr.mapping.map(pos)
+    tr.replaceWith(from, from + node.nodeSize, node.content)
+  }
+  if (ancestor && targets.length === 1) {
+    const endpoint = (position: number) => position > ancestor.pos && position < ancestor.pos + ancestor.node.nodeSize
+      ? position - 1 : tr.mapping.map(position)
+    tr.setSelection(TextSelection.create(tr.doc, endpoint(state.selection.anchor), endpoint(state.selection.head)))
+  }
+  dispatch(tr.scrollIntoView())
+  return true
+}
+
 const setInlineMark = (mark: MdiInlineMark, value?: string): Command => (state, dispatch) => {
+  if (mark === 'warichu') return setWarichu(state, dispatch)
   const type = state.schema.marks[markName(mark)]
   if (!type) return false
   if (mark === 'boten' && value !== undefined) {
@@ -151,6 +214,7 @@ const setInlineMark = (mark: MdiInlineMark, value?: string): Command => (state, 
 }
 
 const removeInlineMark = (mark: MdiInlineMark): Command => (state, dispatch) => {
+  if (mark === 'warichu') return removeWarichu(state, dispatch)
   const type = state.schema.marks[markName(mark)]
   if (!type) return false
   const { from, to, empty } = state.selection
@@ -258,6 +322,8 @@ export const mdiEditCommand = (operation: MdiEditOperation): Command => {
   switch (operation.type) {
     case 'setRuby': return setRuby(operation.reading)
     case 'removeRuby': return removeRuby
+    case 'setWarichu': return setWarichu
+    case 'removeWarichu': return removeWarichu
     case 'setInlineMark': return setInlineMark(operation.mark, operation.value)
     case 'removeInlineMark': return removeInlineMark(operation.mark)
     case 'insertBreak': return insertNode('mdiBreak')
@@ -281,6 +347,7 @@ export const inspectMdiSelection = (state: EditorState): MdiSelectionState => {
       ? String(instance.attrs.mark)
       : mark === 'kern' ? String(instance.attrs.amount) : true
   }
+  if (warichuAncestor(state)) active.warichu = true
   const paragraph = paragraphPosition(state)?.node
   const paragraphLayout = typeof paragraph?.attrs.mdiIndent === 'number'
     ? { layout: 'indent' as const, value: paragraph.attrs.mdiIndent as number }

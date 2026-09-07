@@ -15,6 +15,7 @@ test('initializes WASM, creates Milkdown, and serializes inline and block MDI', 
   expect(smoke?.ready).toBe(true)
   expect(smoke?.mappingMatches).toBe(1)
   expect(smoke?.clipboardParsed).toBe(true)
+  expect(smoke?.prepared).toBe(true)
   expect(smoke?.serialized).toContain('title: MDI Editor Showroom')
   expect(smoke?.serialized).toContain('debug-fixture: editor-showroom')
   expect(smoke?.serialized).toContain('{東京|とうきょう}')

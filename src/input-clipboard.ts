@@ -1,4 +1,4 @@
-import { parse } from '@illusions-lab/mdi'
+import { parse, renderHtml } from '@illusions-lab/mdi'
 import type { Ctx, MilkdownPlugin } from '@milkdown/ctx'
 import { inputRulesCtx, parserCtx, prosePluginsCtx, schemaCtx, serializerCtx } from '@milkdown/core'
 import { InputRule } from '@milkdown/prose/inputrules'
@@ -10,8 +10,8 @@ import {
 } from './literal-text.js'
 
 export const MDI_CLIPBOARD_MIME = 'application/x-illusion-markdown;version=2.0'
-export const MDI_CLIPBOARD_SLICE_MIME = 'application/x-illusion-markdown-slice;version=1'
-const MDI_CLIPBOARD_SLICE_VERSION = 1
+export const MDI_CLIPBOARD_SLICE_MIME = 'application/x-illusion-markdown-slice;version=2'
+export const MDI_CLIPBOARD_SLICE_V1_MIME = 'application/x-illusion-markdown-slice;version=1'
 
 export interface MdiClipboardParseOptions {
   /** Accept an ordinary MDI/Markdown document even when it has no MDI-only construct. */
@@ -28,10 +28,11 @@ export interface MdiClipboardCanonicalizeOptions {
 }
 
 export interface MdiClipboardSlicePayload {
-  readonly version: 1
+  readonly version: 2
+  readonly contentKind: 'inline' | 'block'
   readonly mdi: string
-  readonly openStart: number
-  readonly openEnd: number
+  readonly startAncestors: readonly string[]
+  readonly endAncestors: readonly string[]
 }
 
 const MDI_NODE_TYPES = new Set([
@@ -86,23 +87,63 @@ const validOpenDepth = (slice: Slice, openStart: number, openEnd: number): boole
   && openStart <= openDepth(slice.content.firstChild, false)
   && openEnd <= openDepth(slice.content.lastChild, true)
 
+// Transport semantic roles, never implementation-dependent ProseMirror depths.
+const semanticRoles: Record<string, string> = {
+  paragraph: 'paragraph', heading: 'heading', blockquote: 'blockquote',
+  bullet_list: 'unorderedList', ordered_list: 'orderedList', list_item: 'listItem',
+  mdiWarichu: 'warichu',
+  table: 'table', table_header_row: 'tableHeadRow', table_row: 'tableRow',
+  table_header: 'tableHeader', table_cell: 'tableCell',
+}
+const ancestorPath = (slice: Slice, depth: number, end: boolean): string[] | null => {
+  const path: string[] = []
+  let node = end ? slice.content.lastChild : slice.content.firstChild
+  for (let index = 0; index < depth; index += 1) {
+    const role = node && semanticRoles[node.type.name]
+    if (!role) return null
+    path.push(role)
+    node = end ? node!.lastChild : node!.firstChild
+  }
+  return path
+}
+
 export const encodeMdiClipboardSlice = (slice: Slice) => (ctx: Ctx): string | null => {
   if (!validOpenDepth(slice, slice.openStart, slice.openEnd)) return null
   const mdi = serializeMdiClipboard(slice)(ctx)
-  return mdi ? JSON.stringify({ version: MDI_CLIPBOARD_SLICE_VERSION, mdi,
-    openStart: slice.openStart, openEnd: slice.openEnd } satisfies MdiClipboardSlicePayload) : null
+  const startAncestors = ancestorPath(slice, slice.openStart, false)
+  const endAncestors = ancestorPath(slice, slice.openEnd, true)
+  return mdi && startAncestors && endAncestors ? JSON.stringify({ version: 2, mdi, contentKind: slice.content.firstChild?.isInline ? 'inline' : 'block',
+    startAncestors, endAncestors } satisfies MdiClipboardSlicePayload) : null
 }
 
 export const decodeMdiClipboardSlice = (source: string) => (ctx: Ctx): Slice | null => {
   try {
     const value: unknown = JSON.parse(source)
     if (!value || typeof value !== 'object') return null
-    const payload = value as Partial<MdiClipboardSlicePayload>
-    if (payload.version !== MDI_CLIPBOARD_SLICE_VERSION || typeof payload.mdi !== 'string'
-      || !Number.isInteger(payload.openStart) || !Number.isInteger(payload.openEnd)) return null
-    const parsed = parseMdiClipboard(payload.mdi, { explicit: true })(ctx)
-    if (!parsed || !validOpenDepth(parsed, payload.openStart!, payload.openEnd!)) return null
-    return new Slice(parsed.content, payload.openStart!, payload.openEnd!)
+    const payload = value as Record<string, unknown>
+    if ((payload.version !== 1 && payload.version !== 2) || typeof payload.mdi !== 'string') return null
+    let parsed = parseMdiClipboard(payload.mdi, { explicit: true })(ctx)
+    if (!parsed) return null
+    if (payload.version === 2 && payload.contentKind === 'inline') {
+      if (parsed.content.childCount !== 1 || parsed.content.firstChild?.type.name !== 'paragraph') return parsed
+      parsed = new Slice(parsed.content.firstChild.content, 0, 0)
+    }
+    if (payload.version === 1) {
+      const start = payload.openStart as number
+      const end = payload.openEnd as number
+      if (!validOpenDepth(parsed, start, end)) return parsed
+      // v1 predates the inline warichu node; its numeric depths are ambiguous.
+      let hasWarichu = false
+      parsed.content.descendants(node => { if (node.type.name === 'mdiWarichu') hasWarichu = true })
+      return hasWarichu ? parsed : new Slice(parsed.content, start, end)
+    }
+    const start = payload.startAncestors
+    const end = payload.endAncestors
+    if (!Array.isArray(start) || !Array.isArray(end)
+      || !start.every(role => typeof role === 'string') || !end.every(role => typeof role === 'string')) return null
+    if (JSON.stringify(ancestorPath(parsed, start.length, false)) !== JSON.stringify(start)
+      || JSON.stringify(ancestorPath(parsed, end.length, true)) !== JSON.stringify(end)) return parsed
+    return new Slice(parsed.content, start.length, end.length)
   } catch {
     return null
   }
@@ -117,6 +158,53 @@ export const serializeMdiClipboard = (slice: Slice) => (ctx: Ctx): string | null
   } catch {
     return null
   }
+}
+
+/** Render the selected canonical content as portable, static HTML. */
+export const serializeMdiClipboardHtml = (slice: Slice) => (ctx: Ctx): string | null => {
+  const source = serializeMdiClipboard(slice)(ctx)
+  if (source === null) return null
+  const document = new DOMParser().parseFromString(renderHtml(source), 'text/html')
+  const style = (element: HTMLElement, property: string, value: string) => {
+    element.style.setProperty(property, value)
+    if (!element.style.getPropertyValue(property)) {
+      element.setAttribute('style', `${element.getAttribute('style') ?? ''};${property}:${value};`)
+    }
+  }
+  const rules: Array<[string, Record<string, string>]> = [
+    ['ruby', { 'ruby-align': 'center', 'ruby-position': 'over' }],
+    ['rt', { 'font-size': '0.5em' }],
+    ['.mdi-tcy', { 'text-combine-upright': 'all' }],
+    ['.mdi-nobr', { 'white-space': 'nowrap', 'word-break': 'keep-all' }],
+    ['.mdi-warichu-fragment', { display: 'inline-flex', 'flex-direction': 'column', 'vertical-align': 'middle' }],
+    ['.mdi-warichu-line', { display: 'block', 'white-space': 'nowrap', 'min-block-size': '1em', 'line-height': '1' }],
+    ['.mdi-blank', { display: 'block', 'min-height': '1em' }],
+    ['.mdi-pagebreak', { 'page-break-after': 'always', 'break-after': 'page' }],
+  ]
+  for (const [selector, declarations] of rules) {
+    document.body.querySelectorAll<HTMLElement>(selector).forEach(element => {
+      for (const [property, value] of Object.entries(declarations)) style(element, property, value)
+    })
+  }
+  document.body.querySelectorAll<HTMLElement>('.mdi-em').forEach(element => {
+    const mark = element.style.getPropertyValue('--mdi-em') || 'filled sesame'
+    style(element, 'text-emphasis-style', mark)
+    style(element, '-webkit-text-emphasis-style', mark)
+    style(element, 'text-emphasis-position', 'over right')
+  })
+  document.body.querySelectorAll<HTMLElement>('.mdi-kern').forEach(element => {
+    style(element, 'letter-spacing', element.style.getPropertyValue('--mdi-kern'))
+  })
+  document.body.querySelectorAll<HTMLElement>('.mdi-indent').forEach(element => {
+    const indent = Number(element.style.getPropertyValue('--mdi-indent'))
+    if (Number.isFinite(indent) && indent >= 0) style(element, 'text-indent', `${indent}em`)
+  })
+  document.body.querySelectorAll<HTMLElement>('.mdi-warichu').forEach(element => {
+    if (!element.style.fontSize) style(element, 'font-size', element.parentElement?.closest('.mdi-warichu') ? '1em' : '0.5em')
+    style(element, 'line-height', '1')
+    element.removeAttribute('data-mdi-warichu-source')
+  })
+  return document.body.innerHTML
 }
 
 /** Rebuild an interoperable PM slice through one canonical, provenance-ready source. */
@@ -147,9 +235,11 @@ export const canonicalizeMdiClipboardSlice = (
     const serialized = ctx.get(serializerCtx)(sourceDoc)
     const source = canonicalizeMdiPreservingLiteralText(serialized)
     const parsed = ctx.get(parserCtx)(source)
-    const parsedSlice = new Slice(parsed.content, 0, 0)
+    const content = slice.content.firstChild?.isInline && parsed.childCount === 1 && parsed.firstChild?.type.name === 'paragraph'
+      ? parsed.firstChild.content : parsed.content
+    const parsedSlice = new Slice(content, 0, 0)
     if (!validOpenDepth(parsedSlice, slice.openStart, slice.openEnd)) return null
-    return new Slice(parsed.content, slice.openStart, slice.openEnd)
+    return new Slice(content, slice.openStart, slice.openEnd)
   } catch {
     return null
   }
@@ -258,7 +348,7 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
             // Some clipboard implementations reject non-standard MIME types.
           }
           try {
-            clipboard.setData('text/html', view.serializeForClipboard(slice).dom.innerHTML)
+            clipboard.setData('text/html', serializeMdiClipboardHtml(slice)(ctx) ?? view.serializeForClipboard(slice).dom.innerHTML)
             clipboard.setData('text/plain', source)
             written = true
           } catch {
@@ -276,7 +366,7 @@ export const mdiClipboard = (): MilkdownPlugin => (ctx) => {
         let explicitSource = ''
         let plainSource = ''
         try {
-          structuredSource = clipboard.getData(MDI_CLIPBOARD_SLICE_MIME)
+          structuredSource = clipboard.getData(MDI_CLIPBOARD_SLICE_MIME) || clipboard.getData(MDI_CLIPBOARD_SLICE_V1_MIME)
           explicitSource = clipboard.getData(MDI_CLIPBOARD_MIME)
         } catch {
           // Fall through to interoperable text/plain.

@@ -12,17 +12,21 @@ import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { $prose } from '@milkdown/utils'
 import { Plugin } from '@milkdown/prose/state'
+import type { MarkdownNode } from '@milkdown/transformer'
 import { mdastToMdiSource } from 'mdast-util-mdi'
-import {
-  installMdiProvenanceParser,
-  type MdiBridgeData,
-  type MdiBridgeSegment,
-} from './provenance.js'
+import { mdiWarichuPresentation } from './warichu-presentation.js'
+import { installMdiProvenanceParser } from './provenance.js'
 import {
   canonicalizeMdiPreservingLiteralText,
   canonicalizeMdiSource,
   literalPlaceholder,
 } from './literal-text.js'
+import {
+  assertCompatiblePreparedMdiDocument,
+  normalizeMdiMdastTree,
+  type PreparedMdiDocument,
+  type StructuredCloneSafeMdast,
+} from './prepared.js'
 
 export { initializeMdi } from '@illusions-lab/mdi'
 
@@ -30,261 +34,20 @@ const KERN_AMOUNT = /^[+-]?\d+(?:\.\d+)?em$/
 const mdiFrontmatterCtx = createSlice<string | undefined>(undefined, 'mdiFrontmatter')
 const mdiProvenanceReady = createTimer('mdiProvenanceReady')
 
-interface PositionalMdastNode {
-  type: string
-  value?: string
-  mdiLiteral?: boolean
-  children?: PositionalMdastNode[]
-  data?: Record<string, unknown> & MdiBridgeData
-  position?: {
-    start: { line: number; column: number; offset: number }
-    end: { line: number; column: number; offset: number }
-  }
-}
-
-const SUPPORTED_MDAST_TYPES = new Set([
-  'root',
-  'blockquote',
-  'break',
-  'code',
-  'delete',
-  'emphasis',
-  'heading',
-  'html',
-  'image',
-  'inlineCode',
-  'link',
-  'list',
-  'listItem',
-  'mdiBlank',
-  'mdiBreak',
-  'mdiEm',
-  'mdiKern',
-  'mdiLiteralText',
-  'mdiNoBreak',
-  'mdiPagebreak',
-  'mdiRuby',
-  'mdiTcy',
-  'mdiWarichu',
-  'paragraph',
-  'strong',
-  'text',
-  'thematicBreak',
-])
-
-const promoteLiteralTextNodes = (node: PositionalMdastNode) => {
-  if (node.type === 'text' && node.mdiLiteral === true) node.type = 'mdiLiteralText'
-  node.children?.forEach(promoteLiteralTextNodes)
-}
-
-const BLOCK_CONTAINERS = new Set(['root', 'blockquote', 'listItem'])
-
-const needsLiteralFallback = (node: PositionalMdastNode) => {
-  return !SUPPORTED_MDAST_TYPES.has(node.type)
-}
-
-const nodeProvenance = (node: PositionalMdastNode) => node.data?.mdiProvenance
-
-interface SourceOffsets {
-  slice: (fromByte: number, toByte: number) => string
-  utf16At: (byte: number) => number
-}
-
-const sourceOffsets = (tree: PositionalMdastNode, source: string): SourceOffsets => {
-  const requested = new Set([0])
-  const collect = (node: PositionalMdastNode) => {
-    const span = nodeProvenance(node)?.span
-    if (span) {
-      requested.add(span.startByte)
-      requested.add(span.endByte)
-    }
-    node.children?.forEach(collect)
-  }
-  collect(tree)
-  const resolved = new Map<number, number>([[0, 0]])
-  let byte = 0
-  let utf16 = 0
-  for (const character of source) {
-    const codePoint = character.codePointAt(0)!
-    byte += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
-    utf16 += character.length
-    if (requested.has(byte)) resolved.set(byte, utf16)
-  }
-  const utf16At = (offset: number) => {
-    const result = resolved.get(offset)
-    if (result === undefined) throw new RangeError(`Invalid Rust UTF-8 provenance boundary: ${offset}`)
-    return result
-  }
-  return {
-    utf16At,
-    slice: (fromByte, toByte) => source.slice(utf16At(fromByte), utf16At(toByte)),
-  }
-}
-
-const collectSourceBackedSegments = (
-  node: PositionalMdastNode,
-  offsets: SourceOffsets,
-  baseByte: number,
-): MdiBridgeSegment[] => {
-  const provenance = nodeProvenance(node)
-  const result = provenance?.role === 'textBearing'
-    && provenance.status === 'sourceBacked'
-    && provenance.span
-    && provenance.targets.length
-    ? [{
-        provenance,
-        from: offsets.utf16At(provenance.span.startByte) - offsets.utf16At(baseByte),
-        to: offsets.utf16At(provenance.span.endByte) - offsets.utf16At(baseByte),
-      }]
-    : []
-  return result.concat(node.children?.flatMap((child) =>
-    collectSourceBackedSegments(child, offsets, baseByte)) ?? [])
-}
-
-// Preserve genuinely unknown mdast extensions as editable literal text instead
-// of allowing one unsupported node to abort parsing of the entire document.
-const normalizeUnsupportedNodes = (parent: PositionalMdastNode, offsets: SourceOffsets) => {
-  if (!parent.children) return
-  parent.children = parent.children.map((node) => {
-    if (needsLiteralFallback(node)) {
-      const provenance = nodeProvenance(node)
-      let value: string
-      if (provenance?.span) {
-        value = offsets.slice(provenance.span.startByte, provenance.span.endByte)
-      } else {
-        try {
-          value = mdastToMdiSource({ type: 'root', children: [node] } as never).trimEnd()
-        } catch {
-          value = typeof node.value === 'string' ? node.value : ''
-        }
-      }
-      const mdiBridgeSegments = provenance?.span
-        ? collectSourceBackedSegments(node, offsets, provenance.span.startByte)
-        : []
-      const data = mdiBridgeSegments.length ? { mdiBridgeSegments } : undefined
-      if (BLOCK_CONTAINERS.has(parent.type)) {
-        return { type: 'paragraph', children: [{ type: 'text', value, data }] }
-      }
-      return { type: 'text', value, data }
-    }
-    normalizeUnsupportedNodes(node, offsets)
-    return node
-  })
-}
-
-const splitProvenanceLineBreaks = (tree: PositionalMdastNode) => {
-  const visit = (parent: PositionalMdastNode) => {
-    if (!parent.children) return
-    parent.children = parent.children.flatMap((node) => {
-      visit(node)
-      const provenance = nodeProvenance(node)
-      const bridgeSegments = node.data?.mdiBridgeSegments
-      if (node.type !== 'text' || typeof node.value !== 'string'
-        || !provenance && !bridgeSegments?.length) return [node]
-      const expression = /[\t ]*(?:\r?\n|\r)/g
-      const result: PositionalMdastNode[] = []
-      let start = 0
-      let startCharacter = 0
-      const segmentData = (from: number, to: number): MdiBridgeData => {
-        if (provenance) {
-          const length = graphemes(node.value!.slice(from, to)).length
-          return {
-            mdiProvenance: provenance,
-            mdiBridgeSegment: { startCharacter, endCharacter: startCharacter + length },
-          }
-        }
-        return {
-          mdiBridgeSegments: bridgeSegments!.flatMap((segment) => {
-            const segmentFrom = Math.max(from, segment.from)
-            const segmentTo = Math.min(to, segment.to)
-            if (segmentFrom >= segmentTo) return []
-            const offset = graphemes(node.value!.slice(segment.from, segmentFrom)).length
-            const length = graphemes(node.value!.slice(segmentFrom, segmentTo)).length
-            const base = segment.startCharacter ?? 0
-            return [{
-              ...segment,
-              from: segmentFrom - from,
-              to: segmentTo - from,
-              startCharacter: base + offset,
-              endCharacter: base + offset + length,
-            }]
-          }),
-        }
-      }
-      for (const match of node.value.matchAll(expression)) {
-        const position = match.index
-        if (start !== position) {
-          const value = node.value.slice(start, position)
-          const length = graphemes(value).length
-          result.push({ type: 'text', value, data: segmentData(start, position) })
-          startCharacter += length
-        }
-        const length = graphemes(match[0]).length
-        result.push({ type: 'break', data: {
-          ...segmentData(position, position + match[0].length),
-          isInline: true,
-        } })
-        startCharacter += length
-        start = position + match[0].length
-      }
-      if (!result.length) return [node]
-      if (start < node.value.length) {
-        const value = node.value.slice(start)
-        result.push({
-          type: 'text', value, data: segmentData(start, node.value.length),
-        })
-      }
-      return result
-    })
-  }
-  visit(tree)
-}
-
-const extractFrontmatter = (tree: PositionalMdastNode, ctx: Ctx) => {
-  const index = tree.children?.findIndex((node) => node.type === 'yaml') ?? -1
-  if (index < 0 || !tree.children) {
-    ctx.set(mdiFrontmatterCtx, undefined)
-    return
-  }
-
-  const [yaml] = tree.children.splice(index, 1)
-  ctx.set(mdiFrontmatterCtx, typeof yaml?.value === 'string' ? yaml.value : '')
-}
-
 interface VFileLike {
   value?: unknown
-}
-
-// Milkdown's CommonMark marker transformer reads source positions to retain
-// `*` versus `_`. Convert the exact Rust UTF-8 provenance start to the UTF-16
-// offset Milkdown expects; never search the source or infer traversal order.
-const addCommonmarkMarkerPositions = (tree: PositionalMdastNode, offsets: SourceOffsets) => {
-  const visit = (node: PositionalMdastNode) => {
-    if (!node.position && (node.type === 'strong' || node.type === 'emphasis')) {
-      const startByte = nodeProvenance(node)?.span?.startByte ?? 0
-      const offset = offsets.utf16At(startByte)
-      node.position = {
-        start: { line: 1, column: offset + 1, offset },
-        end: { line: 1, column: offset + 1, offset },
-      }
-    }
-    node.children?.forEach(visit)
-  }
-
-  visit(tree)
 }
 
 const createRemarkMdiForMilkdown = (ctx: Ctx) => {
   return function remarkMdiForMilkdown(this: ThisParameterType<typeof remarkMdi>) {
     remarkMdi.call(this)
-    return (tree: PositionalMdastNode, file: VFileLike) => {
+    return (tree: unknown, file: VFileLike) => {
       const source = typeof file.value === 'string' ? file.value : ''
-      const offsets = sourceOffsets(tree, source)
-      extractFrontmatter(tree, ctx)
-      promoteLiteralTextNodes(tree)
-      normalizeUnsupportedNodes(tree, offsets)
-      splitProvenanceLineBreaks(tree)
-      addCommonmarkMarkerPositions(tree, offsets)
+      ctx.set(mdiFrontmatterCtx, normalizeMdiMdastTree(
+        tree as StructuredCloneSafeMdast,
+        source,
+        (node) => mdastToMdiSource({ type: 'root', children: [node] } as never).trimEnd(),
+      ))
     }
   }
 }
@@ -522,7 +285,31 @@ const wrappingMark = (
 }))
 
 const mdiNoBreakSchema = wrappingMark('mdiNoBreak', 'mdiNoBreak', 'mdi-no-break')
-const mdiWarichuSchema = wrappingMark('mdiWarichu', 'mdiWarichu', 'mdi-warichu')
+const mdiWarichuSchema = $node('mdiWarichu', () => ({
+  inline: true,
+  group: 'inline',
+  content: 'inline*',
+  atom: false,
+  selectable: false,
+  parseDOM: [{ tag: 'span.mdi-warichu' }],
+  toDOM: () => ['span', { class: 'mdi-warichu', 'data-mdi-warichu': '' }, 0],
+  parseMarkdown: {
+    match: (node) => node.type === 'mdiWarichu',
+    runner: (state, node, type) => {
+      state.openNode(type)
+      state.next(node.children)
+      state.closeNode()
+    },
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === 'mdiWarichu',
+    runner: (state, node) => {
+      state.openNode('mdiWarichu')
+      state.next(node.content)
+      state.closeNode()
+    },
+  },
+}))
 
 const mdiKernSchema = $markSchema('mdiKern', () => ({
   attrs: {
@@ -758,7 +545,7 @@ const mdiBlankNormalization = $prose(
   }),
 )
 
-const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
+const createMdiRemarkPlugin = (initialDocument?: PreparedMdiDocument): MilkdownPlugin => (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
   ctx.update(editorStateTimerCtx, (timers) => [...timers, mdiProvenanceReady])
   const literalMdiUnsafe = [
@@ -781,12 +568,17 @@ const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
   ctx.record(mdiProvenanceReady)
   return async () => {
     await ctx.wait(InitReady)
-    // The initial document is parsed only once. Canonicalize it before the
-    // provenance parser is installed so its document shape and the later
-    // source-coordinate snapshot always describe the same MDI source.
-    ctx.update(defaultValueCtx, (source) => (
-      typeof source === 'string' ? canonicalizeMdiPreservingLiteralText(source) : source
-    ))
+    // A prepared payload is already canonical. Use that exact source so the
+    // provenance parser can consume the transported tree without invoking
+    // canonicalization, Rust parsing, or the Remark pipeline again.
+    if (initialDocument) {
+      ctx.set(defaultValueCtx, initialDocument.canonicalSource)
+      ctx.set(mdiFrontmatterCtx, initialDocument.frontmatter)
+    } else {
+      ctx.update(defaultValueCtx, (source) => (
+        typeof source === 'string' ? canonicalizeMdiPreservingLiteralText(source) : source
+      ))
+    }
     let entry: unknown
     ctx.update(remarkPluginsCtx, (plugins) => {
       const nextEntry = {
@@ -797,7 +589,10 @@ const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
       return [nextEntry, ...plugins]
     })
     await ctx.wait(ParserReady)
-    installMdiProvenanceParser(ctx)
+    installMdiProvenanceParser(ctx, initialDocument ? {
+      source: initialDocument.canonicalSource,
+      document: initialDocument.document as MarkdownNode,
+    } : undefined)
     ctx.done(mdiProvenanceReady)
     return () => {
       ctx.update(remarkPluginsCtx, (plugins) => plugins.filter((plugin) => plugin !== entry))
@@ -819,14 +614,14 @@ const mdiRemarkPlugin: MilkdownPlugin = (ctx) => {
 }
 
 const mdiPlugins: MilkdownPlugin[] = [
-  mdiRemarkPlugin,
   mdiRubySchema,
   ...gfmDeleteSchema,
   ...mdiLiteralSchema,
   ...mdiTcySchema,
   ...mdiBotenSchema,
   ...mdiNoBreakSchema,
-  ...mdiWarichuSchema,
+  mdiWarichuSchema,
+  mdiWarichuPresentation,
   ...mdiKernSchema,
   mdiBreakSchema,
   mdiPagebreakSchema,
@@ -834,8 +629,15 @@ const mdiPlugins: MilkdownPlugin[] = [
   mdiBlankNormalization,
 ]
 
-export function mdi(): MilkdownPlugin[] {
-  return [...mdiPlugins]
+interface MdiPluginOptions {
+  initialDocument?: PreparedMdiDocument
+}
+
+export function mdi(options: MdiPluginOptions = {}): MilkdownPlugin[] {
+  const initialDocument = options.initialDocument
+    ? assertCompatiblePreparedMdiDocument(options.initialDocument)
+    : undefined
+  return [createMdiRemarkPlugin(initialDocument), ...mdiPlugins]
 }
 
 export function getMdi(): (ctx: Ctx) => string {
@@ -853,3 +655,5 @@ export * from './editing.js'
 export * from './input-clipboard.js'
 export * from './mapping.js'
 export * from './projection.js'
+export { prepareMdiDocument } from './prepared.js'
+export type { PreparedMdiDocument, StructuredCloneSafeMdast } from './prepared.js'

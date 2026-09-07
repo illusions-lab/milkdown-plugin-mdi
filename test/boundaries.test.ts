@@ -53,7 +53,8 @@ describe('canonical CommonMark boundaries', () => {
   ])('retains the %s mark across a text replacement', async (_label, source, replacement, expected) => {
     const editor = await createEditor(source)
     const view = editor.action((ctx) => ctx.get(editorViewCtx))
-    view.dispatch(view.state.tr.insertText(replacement, 1, 1 + view.state.doc.textContent.length))
+    const start = _label === 'warichu' ? 2 : 1
+    view.dispatch(view.state.tr.insertText(replacement, start, start + view.state.doc.textContent.length))
 
     expect(editor.action(getMdi())).toContain(expected)
   })

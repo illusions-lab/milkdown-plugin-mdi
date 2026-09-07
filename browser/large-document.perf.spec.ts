@@ -22,12 +22,14 @@ test.describe('large-document browser performance', () => {
       const metrics = await page.evaluate((characterCount) => window.__MDI_PERF__!.loadBook(characterCount), characters)
       testInfo.annotations.push({
         type: 'performance',
-        description: `${size}: load ${metrics.loadMs.toFixed(1)} ms; paint ${metrics.firstPaintMs.toFixed(1)} ms; scroll ${metrics.scrollToEndMs.toFixed(1)} ms`,
+        description: `${size}: prepare ${metrics.preparationMs.toFixed(1)} ms; mount ${metrics.mountMs.toFixed(1)} ms; total ${metrics.loadMs.toFixed(1)} ms; paint ${metrics.firstPaintMs.toFixed(1)} ms; scroll ${metrics.scrollToEndMs.toFixed(1)} ms`,
       })
       console.info(`[performance][${testInfo.project.name}] ${size}:`, metrics)
 
       expect(metrics.sourceCharacters).toBeGreaterThanOrEqual(characters)
       expect(metrics.paragraphCount).toBeGreaterThan(characters / 2_000)
+      expect(metrics.preparationMs).toBeGreaterThan(0)
+      expect(metrics.mountMs).toBeGreaterThan(0)
       expect(metrics.loadMs).toBeLessThan(maximumLoadMs(size))
       expect(metrics.firstPaintMs).toBeLessThan(maximumLoadMs(size))
       expect(metrics.scrollToEndMs).toBeLessThan(10_000)

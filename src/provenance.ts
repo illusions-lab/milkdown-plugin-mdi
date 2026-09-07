@@ -72,9 +72,13 @@ const graphemeOffsets = (text: string) => {
  * Rust-provenance recorder. Associations are captured at node construction;
  * no editor text, document order, or source-map reconstruction is involved.
  */
-export const installMdiProvenanceParser = (ctx: Ctx) => {
+export const installMdiProvenanceParser = (
+  ctx: Ctx,
+  initial?: { source: string; document: MarkdownNode },
+) => {
   const schema = ctx.get(schemaCtx)
   const remark = ctx.get(remarkCtx)
+  let initialAvailable = initial !== undefined
   ctx.set(parserCtx, (source: string) => {
     const state = new ParserState(schema)
     const ranges: PendingProvenanceRange[] = []
@@ -174,7 +178,18 @@ export const installMdiProvenanceParser = (ctx: Ctx) => {
       return state
     }
 
-    const tree = remark.runSync(remark.parse(source), source) as MarkdownNode
+    let tree: MarkdownNode
+    if (initialAvailable) {
+      if (source !== initial?.source) {
+        throw new Error(
+          'Prepared MDI initial source mismatch; synchronous parsing fallback is disabled',
+        )
+      }
+      initialAvailable = false
+      tree = initial.document
+    } else {
+      tree = remark.runSync(remark.parse(source), source) as MarkdownNode
+    }
     state.next(tree)
     const doc = state.toDoc()
     const positions = new Map<ProseNode, number>()

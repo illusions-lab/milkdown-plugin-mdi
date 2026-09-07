@@ -12,7 +12,7 @@ An npm trusted publisher is configured per package, so establish `@illusions-lab
 4. Tag the verified commit `v0.1.0` and, from its clean worktree, run `npm publish --access public`.
 5. Push the tag, then create the matching GitHub Release.
 
-The release workflow verifies that the GitHub Release tag equals the package version and repeats the complete release suite. For the first release it sees that the exact version was already published and does not publish it again.
+The Verify CI workflow runs the complete verification suite before a release is created; require it to pass on the exact release commit. The release workflow verifies that the GitHub Release tag equals the package version, checks the package contents, and publishes through OIDC. For the first release it sees that the exact version was already published and does not publish it again.
 
 ## Trusted publishing after `v0.1.0`
 
@@ -28,8 +28,13 @@ Future releases are published by the workflow through OIDC and do not require `N
 
 ```sh
 npm view @illusions-lab/milkdown-plugin-mdi version dist-tags --json
-npm install @illusions-lab/milkdown-plugin-mdi@0.1.0
+PACKAGE_VERSION=$(node -p "require('./package.json').version")
+npm install @illusions-lab/milkdown-plugin-mdi@$PACKAGE_VERSION
 npm audit signatures
 ```
 
-Confirm that the installed package exposes only `mdi`, `getMdi`, and `initializeMdi`, that `style.css` resolves, and that the published dependency graph exposes the expected stable `@illusions-lab/mdi` analysis APIs directly.
+Confirm that the installed package exposes the documented editor, mapping,
+editing, clipboard, and prepared-document APIs; that `prepareMdiDocument()` can
+be structured-cloned and consumed by `mdi({ initialDocument })`; that
+`style.css` resolves; and that the published dependency graph exposes the
+expected stable `@illusions-lab/mdi` analysis APIs directly.

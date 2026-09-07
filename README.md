@@ -60,6 +60,39 @@ const editor = await Editor.make()
 const canonicalSource = editor.action(getMdi())
 ```
 
+### Preparing large initial documents in a Worker
+
+`0.7.0` adds a structured-clone-safe initial-document path. Run the complete
+Rust parse and mdast normalization in a module Worker, then give Milkdown the
+prepared result. The initial editor build validates all transport versions and
+does not canonicalize or parse the source again.
+
+```ts
+// Worker
+import {
+  initializeMdi,
+  prepareMdiDocument,
+} from '@illusions-lab/milkdown-plugin-mdi/prepared'
+
+await initializeMdi()
+const prepared = await prepareMdiDocument(source)
+postMessage(prepared)
+
+// Renderer (after receiving the Worker message)
+const editor = await Editor.make()
+  .use(commonmark)
+  .use(mdi({ initialDocument: prepared }))
+  .create()
+```
+
+Use the `./prepared` entrypoint inside a Worker. It intentionally excludes
+Milkdown, ProseMirror, and their DOM-only modules.
+
+Treat an incompatible prepared-document error as an open failure. Do not fall
+back to synchronous initial parsing on the UI thread. Calling `mdi()` without
+options remains supported for small documents and for synchronous editing,
+paste, and serialization behavior.
+
 Browser consumers must await `initializeMdi()` before creating the editor. It is idempotent and safe to call more than once.
 
 `getMarkdown()` from `@milkdown/utils` emits valid MDI through the registered remark handlers. Use `getMdi()` when persisting a `.mdi` file: it additionally runs the Markdown through Rust's canonical serializer.
@@ -127,3 +160,25 @@ Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or pull
 ## License
 
 MIT © Iktahana
+
+### Automatic warichu
+
+Warichu uses an editable inline node with one ProseMirror content DOM. Rust
+chooses the two-row fragments; browser measurements position existing editable
+text and reserve space with empty, inaccessible widgets. Note glyphs stay at
+50% of body size in horizontal and vertical writing. Nested annotations and
+ruby can increase a row's block extent; adjacent rows have no added gap.
+Automatic visual boundaries never become `[[br]]` or document edits.
+
+Use `mdiEditCommand({ type: 'setWarichu' })` and
+`mdiEditCommand({ type: 'removeWarichu' })`; legacy warichu mark operations and
+`inspectMdiSelection(state).marks.warichu` remain available. IME composition
+freezes geometry; Enter outside composition announces automatic layout.
+
+`serializeMdiClipboardHtml(slice)(ctx)` returns portable static HTML for the
+selection. Clipboard v2 carries semantic ancestor paths and inline/block shape;
+v1 remains readable with canonical-MDI fallback where depths are ambiguous.
+Migrate saved ProseMirror JSON through the old schema's canonical MDI serializer
+before upgrading; canonical MDI documents need no migration. Exact proportional
+font balancing and native OS IME coverage are not claimed by synthetic browser
+tests.

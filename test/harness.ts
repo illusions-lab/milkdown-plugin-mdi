@@ -22,13 +22,17 @@ afterEach(async () => {
   errors = []
 })
 
-export const createEditor = async (source: string, plugins: MilkdownPlugin[] = []) => {
+export const createEditor = async (
+  source: string,
+  plugins: MilkdownPlugin[] = [],
+  mdiOptions: NonNullable<Parameters<typeof mdi>[0]> = {},
+) => {
   const root = document.createElement('div')
   document.body.append(root)
   const editor = Editor.make().config((ctx) => {
     ctx.set(rootCtx, root)
     ctx.set(defaultValueCtx, source)
-  }).use(commonmark).use(mdi()).use(plugins)
+  }).use(commonmark).use(mdi(mdiOptions)).use(plugins)
   await editor.create()
   editors.push({ editor, root })
   return editor

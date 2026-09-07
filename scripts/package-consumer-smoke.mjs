@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const root = new URL('..', import.meta.url)
 const work = mkdtempSync(join(tmpdir(), 'milkdown-mdi-consumer-'))
 const run = (command, args, cwd = work) => execFileSync(command, args, { cwd, stdio: 'inherit' })
-const installPeers = (version, tarball) => run('npm', ['install', '--no-package-lock', '--ignore-scripts', `./${tarball}`,
+const installPeers = (version, tarball) => run('npm', ['install', '--no-package-lock', '--ignore-scripts', '--no-audit', '--no-fund', '--prefer-offline', `./${tarball}`,
   `@milkdown/core@${version}`, `@milkdown/ctx@${version}`, `@milkdown/prose@${version}`,
   `@milkdown/utils@${version}`, `@milkdown/preset-commonmark@${version}`, 'typescript@5.9.3', 'vite@6.4.3'])
 
@@ -54,7 +54,14 @@ const browserSmoke = async () => {
       page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(`http://127.0.0.1:${address.port}/consumer/`)
-      await page.waitForFunction(() => window.__PACKAGE_CONSUMER__?.serialized)
+      await page.waitForFunction(() => window.__PACKAGE_CONSUMER__?.serialized).catch((error) => {
+        throw new Error(`${name} package consumer did not become ready: ${errors.join('\n')}`, {
+          cause: error,
+        })
+      })
+      await page.waitForFunction(() => document.querySelector('#warichu-consumer .mdi-warichu-editable-line[data-mdi-row="1"]'))
+      const noteGeometry = await page.locator('#warichu-consumer .mdi-warichu-space').evaluateAll(elements => elements.every(element => !element.textContent && element.getAttribute('aria-hidden') === 'true'))
+      if (!noteGeometry) throw new Error(`${name} packed warichu widgets are not empty presentation spacers`)
       const result = await page.evaluate(() => ({
         ...window.__PACKAGE_CONSUMER__,
         tcy: getComputedStyle(document.querySelector('.mdi-tcy')).textCombineUpright,
@@ -82,6 +89,9 @@ const browserSmoke = async () => {
         || !result.projectionHasRubyAnnotation
         || !result.projectionDeterministic
         || result.mappedRubyMatches !== 1
+        || result.preparedVersion !== 1
+        || !result.preparedCloneSafe
+        || result.workerPreparedVersion !== 1
         || !result.clipboardParsed
         || result.blockJson !== JSON.stringify([
           { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null, mdiBlank: false } },
@@ -119,7 +129,14 @@ try {
       mdiEditCommand,
       mdiInputRules,
       mapMdiSourceSpansToEditorRanges,
+      prepareMdiDocument,
+      type PreparedMdiDocument,
     } from '@illusions-lab/milkdown-plugin-mdi'
+    import {
+      initializeMdi as initializeMdiForWorker,
+      prepareMdiDocument as prepareMdiDocumentInWorker,
+      type PreparedMdiDocument as WorkerPreparedMdiDocument,
+    } from '@illusions-lab/milkdown-plugin-mdi/prepared'
     const plugins: MilkdownPlugin[] = mdi()
     const optionalPlugins: MilkdownPlugin[] = [mdiInputRules(), mdiClipboard()]
     const command: Command = mdiEditCommand({ type: 'insertBlank' })
@@ -127,8 +144,12 @@ try {
     const mappingAction = createMdiEditorMapping()
     const batchMapping = mapMdiSourceSpansToEditorRanges
     const initialized: Promise<void> = initializeMdi()
+    const prepare: (source: string) => Promise<PreparedMdiDocument> = prepareMdiDocument
+    const workerPrepare: (source: string) => Promise<WorkerPreparedMdiDocument> = prepareMdiDocumentInWorker
+    const workerInitialized: Promise<void> = initializeMdiForWorker()
+    const preparedOptions: NonNullable<Parameters<typeof mdi>[0]> = { initialDocument: undefined }
     const projection: MdiTextBlocksResult = getMdiTextBlocks('# typed consumer')
-    void [plugins, optionalPlugins, command, action, mappingAction, batchMapping, initialized, projection]
+    void [plugins, optionalPlugins, command, action, mappingAction, batchMapping, initialized, prepare, workerPrepare, workerInitialized, preparedOptions, projection]
   `)
   writeFileSync(join(work, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -147,24 +168,48 @@ try {
     import {
       createMdiEditorMapping, initializeMdi, mdi, mdiClipboard,
       mdiEditCommand, mdiInputRules, mapMdiSourceSpansToEditorRanges, getMdi,
+      prepareMdiDocument,
     } from '@illusions-lab/milkdown-plugin-mdi'
+    import {
+      initializeMdi as initializeMdiForWorker,
+      prepareMdiDocument as prepareMdiDocumentInWorker,
+    } from '@illusions-lab/milkdown-plugin-mdi/prepared'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
+    await initializeMdi()
+    const prepared = await prepareMdiDocument('{東京|とうきょう}')
     if (
-      typeof initializeMdi !== 'function' || !Array.isArray(mdi()) || typeof getMdi !== 'function'
+      typeof initializeMdi !== 'function' || typeof initializeMdiForWorker !== 'function'
+      || typeof prepareMdiDocumentInWorker !== 'function'
+      || !Array.isArray(mdi()) || typeof getMdi !== 'function'
       || typeof createMdiEditorMapping !== 'function' || typeof mdiEditCommand !== 'function'
       || typeof mapMdiSourceSpansToEditorRanges !== 'function'
       || typeof mdiInputRules() !== 'function' || typeof mdiClipboard() !== 'function'
+      || prepared.version !== 1 || structuredClone(prepared).canonicalSource !== prepared.canonicalSource
+      || !Array.isArray(mdi({ initialDocument: prepared }))
     ) process.exit(1)
     if ([getMdiTextBlocks, parse, renderText, serializeMdi].some((value) => typeof value !== 'function')) process.exit(1)
   `], { cwd: work, stdio: 'inherit' })
   writeFileSync(join(work, 'index.html'), '<div id="editor"></div><script type="module" src="/main.js"></script>')
+  writeFileSync(join(work, 'prepared-worker.js'), `
+    import {
+      initializeMdi,
+      prepareMdiDocument,
+    } from '@illusions-lab/milkdown-plugin-mdi/prepared'
+
+    void initializeMdi()
+      .then(() => prepareMdiDocument('{東京|とうきょう}'))
+      .then((prepared) => {
+        postMessage({ version: prepared.version, cloneSafe: structuredClone(prepared).version === 1 })
+      })
+      .catch((error) => { throw error })
+  `)
   writeFileSync(join(work, 'main.js'), `
     import { Editor, defaultValueCtx, editorStateCtx, rootCtx } from '@milkdown/core'
     import { commonmark } from '@milkdown/preset-commonmark'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
     import {
       createMdiEditorMapping, initializeMdi, mapMdiSourceSpansToEditorRanges,
-      mdi, mdiClipboard, mdiInputRules, parseMdiClipboard, getMdi,
+      mdi, mdiClipboard, mdiInputRules, parseMdiClipboard, getMdi, prepareMdiDocument,
     } from '@illusions-lab/milkdown-plugin-mdi'
     import '@illusions-lab/milkdown-plugin-mdi/style.css'
     const start = async () => {
@@ -177,7 +222,18 @@ try {
         '[[pagebreak:right]]', '',
         '[[blank]]',
       ].join('\\n')
-      const editor = Editor.make().config((ctx) => { ctx.set(rootCtx, '#editor'); ctx.set(defaultValueCtx, initial) }).use(commonmark).use(mdi()).use([mdiInputRules(), mdiClipboard()])
+      const prepared = await prepareMdiDocument(initial)
+      const preparedCloneSafe = structuredClone(prepared).canonicalSource === prepared.canonicalSource
+      const workerPreparedVersion = await new Promise((resolve, reject) => {
+        const worker = new Worker(new URL('./prepared-worker.js', import.meta.url), { type: 'module' })
+        worker.addEventListener('message', ({ data }) => {
+          worker.terminate()
+          if (!data?.cloneSafe) reject(new Error('prepared Worker result is not clone safe'))
+          else resolve(data.version)
+        }, { once: true })
+        worker.addEventListener('error', reject, { once: true })
+      })
+      const editor = Editor.make().config((ctx) => { ctx.set(rootCtx, '#editor'); ctx.set(defaultValueCtx, initial) }).use(commonmark).use(mdi({ initialDocument: prepared })).use([mdiInputRules(), mdiClipboard()])
       await editor.create()
       const serialized = editor.action(getMdi())
       const parsed = parse(serialized)
@@ -210,9 +266,18 @@ try {
         projectionHasRubyAnnotation: projection.blocks[0]?.annotations[0]?.text === 'とうきょう',
         projectionDeterministic: JSON.stringify(projection) === JSON.stringify(repeatedProjection),
         mappedRubyMatches: mappedRuby.matches.length,
+        preparedVersion: prepared.version,
+        preparedCloneSafe,
+        workerPreparedVersion,
         clipboardParsed: clipboardParsed !== null,
         blockJson,
       }
+      const noteRoot = document.createElement('div')
+      noteRoot.id = 'warichu-consumer'
+      noteRoot.style.cssText = 'font-size:20px;width:180px'
+      document.body.append(noteRoot)
+      const noteEditor = Editor.make().config(ctx => { ctx.set(rootCtx, noteRoot); ctx.set(defaultValueCtx, '前[[warichu:一二三四五六七八九十]]後') }).use(commonmark).use(mdi())
+      await noteEditor.create()
     }
     void start()
   `)

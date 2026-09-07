@@ -1,4 +1,7 @@
-import { defaultValueCtx, Editor, rootCtx } from '@milkdown/core'
+import { history, undo } from '@milkdown/prose/history'
+import { TextSelection } from '@milkdown/prose/state'
+import { $prose } from '@milkdown/utils'
+import { defaultValueCtx, editorViewCtx, parserCtx, Editor, rootCtx } from '@milkdown/core'
 import {
   changeWritingMode,
   verticalWriting,
@@ -17,6 +20,8 @@ import {
   mdiClipboard,
   mdiInputRules,
   parseMdiClipboard,
+  prepareMdiDocument,
+  type PreparedMdiDocument,
 } from '../src/index'
 import '../src/style.css'
 import markdown from './content.mdi?raw'
@@ -29,6 +34,7 @@ declare global {
       serialized?: string
       mappingMatches?: number
       clipboardParsed?: boolean
+      prepared?: boolean
       error?: string
     }
     __MDI_PERF__?: {
@@ -40,6 +46,8 @@ declare global {
 interface LargeDocumentMetrics {
   sourceCharacters: number
   paragraphCount: number
+  preparationMs: number
+  mountMs: number
   loadMs: number
   firstPaintMs: number
   scrollToEndMs: number
@@ -90,14 +98,15 @@ const renderFrontmatter = (entries: Array<{ key: string; value: unknown }>) => {
   }
 }
 
-const makeEditor = (source: string) => Editor.make()
+const makeEditor = (source: string, initialDocument?: PreparedMdiDocument) => Editor.make()
   .config((ctx) => {
     ctx.set(rootCtx, '#editor')
     ctx.set(defaultValueCtx, source)
   })
   .config(nord)
   .use(commonmark)
-  .use(mdi())
+  .use($prose(() => history({ newGroupDelay: -1 })))
+  .use(mdi({ initialDocument }))
   .use([mdiInputRules(), mdiClipboard()])
   .use(verticalWriting({ mode: initialMode }))
 
@@ -125,7 +134,9 @@ window.__MDI_PERF__ = {
     document.querySelector('#editor')?.replaceChildren()
 
     const startedAt = performance.now()
-    editor = makeEditor(source)
+    const prepared = await prepareMdiDocument(source)
+    const preparedAt = performance.now()
+    editor = makeEditor(prepared.canonicalSource, prepared)
     await editor.create()
     const loadedAt = performance.now()
     await nextFrame()
@@ -145,6 +156,8 @@ window.__MDI_PERF__ = {
     return {
       sourceCharacters: source.length,
       paragraphCount: document.querySelectorAll('#editor .milkdown p').length,
+      preparationMs: preparedAt - startedAt,
+      mountMs: loadedAt - preparedAt,
       loadMs: loadedAt - startedAt,
       firstPaintMs: paintedAt - startedAt,
       scrollToEndMs,
@@ -159,7 +172,8 @@ const start = async () => {
     await initializeMdi()
     renderFrontmatter(parse(markdown).document.frontmatter?.entries ?? [])
 
-    editor = makeEditor(markdown)
+    const prepared = await prepareMdiDocument(markdown)
+    editor = makeEditor(prepared.canonicalSource, prepared)
     await editor.create()
 
     const changeMode = (mode: WritingMode) => {
@@ -191,7 +205,13 @@ const start = async () => {
       endByte: startByte + new TextEncoder().encode('東京').length,
     }])[0]?.matches.length
     const clipboardParsed = editor.action(parseMdiClipboard('{字|じ}', { explicit: true })) !== null
-    window.__MDI_SMOKE__ = { ready: true, serialized, mappingMatches, clipboardParsed }
+    window.__MDI_SMOKE__ = {
+      ready: true,
+      serialized,
+      mappingMatches,
+      clipboardParsed,
+      prepared: true,
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
     const details = error instanceof Error && error.stack ? `${message}\n${error.stack}` : message
@@ -202,3 +222,37 @@ const start = async () => {
 }
 
 void start()
+
+let warichuDocumentWrites = 0
+const observedWarichuViews = new WeakSet<object>()
+Object.assign(window, { __MDI_WARICHU__: {
+  load: (source: string) => editor?.action(ctx => {
+    const view = ctx.get(editorViewCtx)
+    const doc = ctx.get(parserCtx)(source)
+    if (!observedWarichuViews.has(view)) {
+      observedWarichuViews.add(view)
+      const dispatch = view.dispatch.bind(view)
+      view.dispatch = transaction => { if (transaction.docChanged) warichuDocumentWrites += 1; dispatch(transaction) }
+    }
+    view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta('addToHistory', false))
+    view.dom.style.position = 'relative'
+    view.dom.style.width = '220px'
+    view.dom.style.fontSize = '20px'
+    warichuDocumentWrites = 0
+    return getMdi()(ctx)
+  }),
+  writes: () => warichuDocumentWrites,
+  source: () => editor?.action(getMdi()),
+  insert: (text: string) => editor?.action(ctx => { const view = ctx.get(editorViewCtx); view.dispatch(view.state.tr.insertText(text)) }),
+  range: () => editor?.action(ctx => { const selection = ctx.get(editorViewCtx).state.selection; return { from: selection.from, to: selection.to } }),
+  position: () => editor?.action(ctx => ctx.get(editorViewCtx).state.selection.from),
+  select: (from: number, to = from) => editor?.action(ctx => {
+    const view = ctx.get(editorViewCtx)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)))
+    view.focus()
+  }),
+  undo: () => editor?.action(ctx => {
+    const view = ctx.get(editorViewCtx)
+    return undo(view.state, view.dispatch)
+  }),
+} })
