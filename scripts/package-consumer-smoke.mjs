@@ -7,11 +7,7 @@ import { join } from 'node:path'
 const root = new URL('..', import.meta.url)
 const work = mkdtempSync(join(tmpdir(), 'milkdown-mdi-consumer-'))
 const run = (command, args, cwd = work) => execFileSync(command, args, { cwd, stdio: 'inherit' })
-// Optional local candidate archives support integration before upstream release.
-// Normal release verification leaves this unset and installs registry artifacts.
-const candidateTarballs = JSON.parse(process.env.MDI_CANDIDATE_TARBALLS ?? '[]')
-if (!Array.isArray(candidateTarballs) || candidateTarballs.some(path => typeof path !== 'string' || !path.endsWith('.tgz'))) throw new Error('MDI_CANDIDATE_TARBALLS must be a JSON array of tarball paths')
-const installPeers = (version, tarball) => run('npm', ['install', '--no-package-lock', '--ignore-scripts', '--no-audit', '--no-fund', '--prefer-offline', `./${tarball}`, ...candidateTarballs,
+const installPeers = (version, tarball) => run('npm', ['install', '--no-package-lock', '--ignore-scripts', '--no-audit', '--no-fund', '--prefer-offline', tarball,
   `@milkdown/core@${version}`, `@milkdown/ctx@${version}`, `@milkdown/prose@${version}`,
   `@milkdown/utils@${version}`, `@milkdown/preset-commonmark@${version}`, 'typescript@5.9.3', 'vite@6.4.3'])
 
@@ -119,8 +115,12 @@ const browserSmoke = async () => {
 }
 
 try {
-  run('npm', ['run', 'build'], root)
-  const tarball = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', work], { cwd: root, encoding: 'utf8' }))[0].filename
+  const registryVersion = process.env.REGISTRY_PLUGIN_VERSION
+  if (registryVersion && !/^0\.8\.\d+$/.test(registryVersion)) throw new Error('Invalid registry plugin version')
+  if (!registryVersion) run('npm', ['run', 'build'], root)
+  const tarball = registryVersion
+    ? `@illusions-lab/milkdown-plugin-mdi@${registryVersion}`
+    : './' + JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', work], { cwd: root, encoding: 'utf8' }))[0].filename
   writeFileSync(join(work, 'package.json'), JSON.stringify({ private: true, type: 'module', scripts: { build: 'vite build' } }, null, 2))
   writeFileSync(join(work, 'contract.ts'), `
     import type { Ctx, MilkdownPlugin } from '@milkdown/ctx'

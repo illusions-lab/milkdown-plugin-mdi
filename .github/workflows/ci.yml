@@ -24,6 +24,7 @@ jobs:
       # Ubicloud runners are ephemeral. Install both browser binaries and the
       # WebKit system libraries needed for the cross-browser suite.
       - run: npx playwright install --with-deps chromium firefox webkit
+      - run: node --test scripts/release-artifact.test.mjs
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build

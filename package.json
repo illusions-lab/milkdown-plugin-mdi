@@ -91,8 +91,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@illusions-lab/mdi": "^2.1.0",
-    "@illusions-lab/mdi-remark": "^2.1.0",
-    "mdast-util-mdi": "^2.1.0"
+    "@illusions-lab/mdi": "2.1.0",
+    "@illusions-lab/mdi-remark": "2.1.0",
+    "mdast-util-mdi": "2.1.0"
   }
 }
