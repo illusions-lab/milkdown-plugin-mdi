@@ -10,6 +10,9 @@ to builds, tests, dry runs, and registry verification. No local npm login is nee
    `npm run test:browser:performance`, and `node --test scripts/release-artifact.test.mjs`.
 3. Merge the candidate to main and wait for Verify to pass on that exact SHA.
 4. Dispatch `release.yml` from main with `candidate_sha` and `version`.
+   `publish_runner` selects either the default GitHub-hosted Ubuntu pool or its
+   ARM64 pool if runner allocation stalls. Cancel the queued attempt before
+   switching pools; never overlap publication attempts.
 
 The workflow validates main ancestry and the successful Verify run, builds and
 packs once, and retains the original tarball plus a SHA-512 manifest for 90 days

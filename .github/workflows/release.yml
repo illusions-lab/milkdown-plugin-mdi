@@ -11,6 +11,14 @@ on:
         description: Exact package version
         required: true
         type: string
+      publish_runner:
+        description: GitHub-hosted runner pool
+        required: true
+        default: ubuntu-latest
+        type: choice
+        options:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
       recovery_run_id:
         description: Original release run ID (required after a publication attempt)
         required: false
@@ -25,7 +33,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.publish_runner }}
     permissions:
       contents: write
       actions: read
