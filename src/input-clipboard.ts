@@ -36,7 +36,7 @@ export interface MdiClipboardSlicePayload {
 }
 
 const MDI_NODE_TYPES = new Set([
-  'ruby', 'tcy', 'break', 'em', 'noBreak', 'warichu', 'kern', 'blank', 'pagebreak',
+  'comment', 'ruby', 'tcy', 'break', 'em', 'noBreak', 'warichu', 'kern', 'blank', 'pagebreak',
 ])
 
 const containsMdi = (result: ReturnType<typeof parse>) => {
@@ -50,7 +50,7 @@ const containsMdi = (result: ReturnType<typeof parse>) => {
 }
 
 const parsedSlice = (ctx: Ctx, source: string, options: MdiClipboardParseOptions = {}) => {
-  const result = parse(source)
+  const result = parse(source, { includeComments: true })
   if (result.diagnostics.some(({ code }) => code === 'mdi.version.unsupported')) return null
   if (!options.explicit && !containsMdi(result)) return null
   const canonical = canonicalizeMdiPreservingLiteralText(source)

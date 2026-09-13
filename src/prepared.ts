@@ -1,4 +1,4 @@
-import { MDI_IR_VERSION, type MdiDiagnostic } from '@illusions-lab/mdi'
+import { MDI_COMMENT_IR_VERSION, type MdiDiagnostic } from '@illusions-lab/mdi'
 import {
   MDI_MDAST_PROVENANCE_VERSION,
   parseForMdast,
@@ -7,7 +7,16 @@ import {
 } from '@illusions-lab/mdi/internal/mdast'
 import { canonicalizeMdiPreservingLiteralText } from './literal-text.js'
 
-export const PREPARED_MDI_DOCUMENT_VERSION = 1 as const
+export const PREPARED_MDI_DOCUMENT_VERSION = 2 as const
+
+/** Check the wire contract before consuming a prepared tree from another runtime. */
+export const hasCompatiblePreparedMdiDocumentVersions = (value: {
+  version?: unknown
+  mdiIrVersion?: unknown
+  provenanceVersion?: unknown
+}): boolean => value.version === PREPARED_MDI_DOCUMENT_VERSION
+  && value.mdiIrVersion === MDI_COMMENT_IR_VERSION
+  && value.provenanceVersion === MDI_MDAST_PROVENANCE_VERSION
 
 export interface StructuredCloneSafeMdast {
   type: string
@@ -55,10 +64,10 @@ export const assertCompatiblePreparedMdiDocument = (
       prepared.version,
     )
   }
-  if (prepared.mdiIrVersion !== MDI_IR_VERSION) {
+  if (prepared.mdiIrVersion !== MDI_COMMENT_IR_VERSION) {
     throw new IncompatiblePreparedMdiDocumentError(
       'mdiIrVersion',
-      MDI_IR_VERSION,
+      MDI_COMMENT_IR_VERSION,
       prepared.mdiIrVersion,
     )
   }
@@ -142,6 +151,8 @@ const SUPPORTED_MDAST_TYPES = new Set([
   'list',
   'listItem',
   'mdiBlank',
+  'mdiComment',
+  'mdiCommentBlock',
   'mdiBreak',
   'mdiEm',
   'mdiKern',
@@ -195,7 +206,10 @@ const normalizeUnsupportedNodes = (
   serializeUnsupported: SerializeUnsupportedNode,
 ) => {
   if (!parent.children) return
-  parent.children = parent.children.map((node) => {
+  parent.children = parent.children.flatMap((node) => {
+    if (node.type === 'mdiComment' && BLOCK_CONTAINERS.has(parent.type)) {
+      return { ...node, type: 'mdiCommentBlock' }
+    }
     if (!SUPPORTED_MDAST_TYPES.has(node.type)) {
       const provenance = provenanceOf(node)
       let value: string
@@ -212,6 +226,33 @@ const normalizeUnsupportedNodes = (
         ? collectSourceBackedSegments(node, offsets, provenance.span.startByte)
         : []
       const data = mdiBridgeSegments.length ? { mdiBridgeSegments } : undefined
+      const comments: StructuredCloneSafeMdast[] = []
+      const collectComments = (child: StructuredCloneSafeMdast) => {
+        if (child.type === 'mdiComment') comments.push(child)
+        child.children?.forEach(collectComments)
+      }
+      collectComments(node)
+      if (comments.length && provenance?.span) {
+        const base = offsets.utf16At(provenance.span.startByte)
+        const pieces: StructuredCloneSafeMdast[] = []
+        let cursor = provenance.span.startByte
+        const addText = (end: number) => {
+          if (end <= cursor) return
+          const from = offsets.utf16At(cursor) - base
+          const to = offsets.utf16At(end) - base
+          const segments = mdiBridgeSegments.filter((segment) => Number(segment.from) >= from && Number(segment.to) <= to)
+            .map((segment) => ({ ...segment, from: Number(segment.from) - from, to: Number(segment.to) - from }))
+          pieces.push({ type: 'text', value: offsets.slice(cursor, end), ...(segments.length ? { data: { mdiBridgeSegments: segments } } : {}) })
+        }
+        for (const comment of comments) {
+          const span = provenanceOf(comment)!.span!
+          addText(span.startByte)
+          pieces.push(comment)
+          cursor = span.endByte
+        }
+        addText(provenance.span.endByte)
+        return BLOCK_CONTAINERS.has(parent.type) ? { type: 'paragraph', children: pieces } : pieces
+      }
       return BLOCK_CONTAINERS.has(parent.type)
         ? { type: 'paragraph', children: [{ type: 'text', value, data }] }
         : { type: 'text', value, data }
@@ -363,6 +404,8 @@ const toMdastNode = (node: MdiMdastNode): StructuredCloneSafeMdast => {
         type: 'mdiRuby',
         ruby: (node.ruby as { value?: unknown })?.value ?? '',
       }
+    case 'comment':
+      return { ...mapped, type: 'mdiComment', span: _span }
     case 'tcy':
       return { ...mapped, type: 'mdiTcy' }
     case 'break':
@@ -430,9 +473,9 @@ const countBlocks = (node: StructuredCloneSafeMdast): number =>
  * module Worker and pass the returned plain data to `mdi({ initialDocument })`.
  */
 export async function prepareMdiDocument(source: string): Promise<PreparedMdiDocument> {
-  const original = parseForMdast(source)
+  const original = parseForMdast(source, { includeComments: true })
   const canonicalSource = canonicalizeMdiPreservingLiteralText(source)
-  const canonical = parseForMdast(canonicalSource)
+  const canonical = parseForMdast(canonicalSource, { includeComments: true })
   const preparedTree = toPreparedTree(canonical.document, canonicalSource)
   const prepared: PreparedMdiDocument = {
     version: PREPARED_MDI_DOCUMENT_VERSION,

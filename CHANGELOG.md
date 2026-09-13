@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 - Editorial comments
+
+- Preserve MDI 2.1 comments through parsing, Worker preparation, editing, paste and source saving with hidden inline and block atoms.
+- Require prepared transport version 2 and inclusive MDI IR 1.1; reject old caches so hosts can prepare their source again.
+- Keep body projections and publications free of valid comments, including opaque multiline payloads in unsupported containers.
+
 ## 0.7.2 - 2026-09-13
 
 - Defer warichu presentation transactions while a native pointer selection is waiting for ProseMirror synchronization, preventing concurrent font or layout reflow from restoring the preceding text selection.

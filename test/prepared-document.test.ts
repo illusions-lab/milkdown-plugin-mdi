@@ -1,6 +1,6 @@
 import type { MilkdownPlugin } from '@milkdown/ctx'
 import { defaultValueCtx, editorStateCtx, ParserReady } from '@milkdown/core'
-import { MDI_IR_VERSION } from '@illusions-lab/mdi'
+import { MDI_COMMENT_IR_VERSION } from '@illusions-lab/mdi'
 import { MDI_MDAST_PROVENANCE_VERSION, parseForMdast } from '@illusions-lab/mdi/internal/mdast'
 import { $remark } from '@milkdown/utils'
 import { describe, expect, it } from 'vitest'
@@ -42,8 +42,8 @@ describe('prepared MDI document contract', () => {
       'mdi.version.unsupported',
     )
     expect(prepared).toMatchObject({
-      version: 1,
-      mdiIrVersion: MDI_IR_VERSION,
+      version: 2,
+      mdiIrVersion: MDI_COMMENT_IR_VERSION,
       provenanceVersion: MDI_MDAST_PROVENANCE_VERSION,
       canonicalSource: expect.any(String),
       document: { type: 'root', children: expect.any(Array) },
@@ -114,13 +114,13 @@ describe('prepared MDI document contract', () => {
   })
 
   it.each([
-    ['version', 2],
+    ['version', 1],
     ['mdiIrVersion', 'future'],
     ['provenanceVersion', 'future'],
   ] as const)('rejects an incompatible %s without a synchronous fallback', (field, value) => {
     const incompatible = {
-      version: 1,
-      mdiIrVersion: MDI_IR_VERSION,
+      version: 2,
+      mdiIrVersion: MDI_COMMENT_IR_VERSION,
       provenanceVersion: MDI_MDAST_PROVENANCE_VERSION,
       canonicalSource: '',
       document: { type: 'root', children: [] },
@@ -134,8 +134,8 @@ describe('prepared MDI document contract', () => {
 
   it('rejects a prepared payload without an mdast root', () => {
     const incompatible = {
-      version: 1,
-      mdiIrVersion: MDI_IR_VERSION,
+      version: 2,
+      mdiIrVersion: MDI_COMMENT_IR_VERSION,
       provenanceVersion: MDI_MDAST_PROVENANCE_VERSION,
       canonicalSource: '',
       document: { type: 'paragraph', children: [] },

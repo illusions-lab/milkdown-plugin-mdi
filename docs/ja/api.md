@@ -29,7 +29,7 @@ module Worker 内で `initializeMdi()` の後に呼び、結果を `postMessage(
 
 ```ts
 interface PreparedMdiDocument {
-  version: 1
+  version: 2
   mdiIrVersion: string
   provenanceVersion: string
   canonicalSource: string
@@ -174,3 +174,24 @@ v2 の `contentKind` はインライン断片とブロック断片を区別し�
 その行の高さを確保し、行の間に余分な間隔を追加しません。自動分割は文書へ
 書き戻されません。IME変換中は表示位置を固定し、終了後に再配置します。
 Enter は変換中以外で自動配置の案内を表示し、`mdi-warichu-auto-layout` を送出します。
+
+## Editorial comments in MDI 2.1
+
+The editor preserves valid `<!-- note -->` comments as hidden document atoms.
+Inline `mdiComment` and block `mdiCommentBlock` nodes store the exact `value`
+and original UTF-8 `span`; editing, clipboard operations and undo keep them with
+their surrounding content. The plugin adds no comment controls or labels.
+
+Synchronous parsing, Worker preparation, paste and `getMdi()` explicitly retain
+comments. Prepared transport version 2 requires MDI IR 1.1. Discard version 1
+caches and call `prepareMdiDocument()` again from their source; incompatible
+caches fail explicitly. Never continue by silently dropping comment nodes.
+
+Body projections and publication output omit valid comments. Default public MDI
+parsing still returns comment-free IR 1.0. Applications that need comment content
+must request `{ includeComments: true }` explicitly. Existing 2.0 documents also
+recognize comments without changing their version declaration. Previously visible
+HTML comment text now disappears from publication output. Unterminated comments
+remain literal and may be exported, with `mdi.comment.unterminated` diagnostics.
+
+`@illusions-lab/milkdown-plugin-mdi/prepared` は Worker 対応の `hasCompatiblePreparedMdiDocumentVersions(value)` を公開します。キャッシュの再利用前に prepared・IR・provenance の全バージョンを確認し、非互換の場合は保持している元のソースから再生成してください。

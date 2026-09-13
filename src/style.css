@@ -86,3 +86,6 @@
 .mdi-warichu:has(.mdi-warichu-space) { font-size: inherit; }
 
 .mdi-warichu .mdi-warichu { font-size: inherit; }
+
+/* Editorial atoms retain payloads in the editor model without taking space. */
+[data-mdi-comment] { display: none !important; }

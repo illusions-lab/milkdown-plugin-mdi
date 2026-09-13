@@ -49,7 +49,7 @@ const protectLiteralSource = (source: string) => {
     node.children?.forEach(visit)
   }
   try {
-    visit({ children: parseForMdast(source).document.children as unknown as LiteralNode[] })
+    visit({ children: parseForMdast(source, { includeComments: true }).document.children as unknown as LiteralNode[] })
   } catch {
     return source
   }

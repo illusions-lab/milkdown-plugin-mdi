@@ -7,7 +7,11 @@ import { join } from 'node:path'
 const root = new URL('..', import.meta.url)
 const work = mkdtempSync(join(tmpdir(), 'milkdown-mdi-consumer-'))
 const run = (command, args, cwd = work) => execFileSync(command, args, { cwd, stdio: 'inherit' })
-const installPeers = (version, tarball) => run('npm', ['install', '--no-package-lock', '--ignore-scripts', '--no-audit', '--no-fund', '--prefer-offline', `./${tarball}`,
+// Optional local candidate archives support integration before upstream release.
+// Normal release verification leaves this unset and installs registry artifacts.
+const candidateTarballs = JSON.parse(process.env.MDI_CANDIDATE_TARBALLS ?? '[]')
+if (!Array.isArray(candidateTarballs) || candidateTarballs.some(path => typeof path !== 'string' || !path.endsWith('.tgz'))) throw new Error('MDI_CANDIDATE_TARBALLS must be a JSON array of tarball paths')
+const installPeers = (version, tarball) => run('npm', ['install', '--no-package-lock', '--ignore-scripts', '--no-audit', '--no-fund', '--prefer-offline', `./${tarball}`, ...candidateTarballs,
   `@milkdown/core@${version}`, `@milkdown/ctx@${version}`, `@milkdown/prose@${version}`,
   `@milkdown/utils@${version}`, `@milkdown/preset-commonmark@${version}`, 'typescript@5.9.3', 'vite@6.4.3'])
 
@@ -73,6 +77,8 @@ const browserSmoke = async () => {
         || !result.serialized?.includes('[[indent:2]]')
         || !result.serialized?.includes('[[bottom]]')
         || !result.serialized?.includes('[[pagebreak:right]]')
+        || !result.serialized?.includes('<!--consumer note-->')
+        || result.text?.includes('consumer note')
         || !result.canonical
         || result.frontmatterTitle !== 'Consumer Contract'
         || !result.text?.includes('東京 12')
@@ -89,9 +95,9 @@ const browserSmoke = async () => {
         || !result.projectionHasRubyAnnotation
         || !result.projectionDeterministic
         || result.mappedRubyMatches !== 1
-        || result.preparedVersion !== 1
+        || result.preparedVersion !== 2
         || !result.preparedCloneSafe
-        || result.workerPreparedVersion !== 1
+        || result.workerPreparedVersion !== 2
         || !result.clipboardParsed
         || result.blockJson !== JSON.stringify([
           { type: 'paragraph', attrs: { mdiIndent: null, mdiBottom: null, mdiBlank: false } },
@@ -133,6 +139,7 @@ try {
       type PreparedMdiDocument,
     } from '@illusions-lab/milkdown-plugin-mdi'
     import {
+      hasCompatiblePreparedMdiDocumentVersions,
       initializeMdi as initializeMdiForWorker,
       prepareMdiDocument as prepareMdiDocumentInWorker,
       type PreparedMdiDocument as WorkerPreparedMdiDocument,
@@ -148,7 +155,9 @@ try {
     const workerPrepare: (source: string) => Promise<WorkerPreparedMdiDocument> = prepareMdiDocumentInWorker
     const workerInitialized: Promise<void> = initializeMdiForWorker()
     const preparedOptions: NonNullable<Parameters<typeof mdi>[0]> = { initialDocument: undefined }
-    const projection: MdiTextBlocksResult = getMdiTextBlocks('# typed consumer')
+    const projection: MdiTextBlocksResult = getMdiTextBlocks('# typed consumer<!--note-->', { includeComments: true })
+    const compatible: boolean = hasCompatiblePreparedMdiDocumentVersions({ version: 2, mdiIrVersion: '1.1', provenanceVersion: '1.0' })
+    void compatible
     void [plugins, optionalPlugins, command, action, mappingAction, batchMapping, initialized, prepare, workerPrepare, workerInitialized, preparedOptions, projection]
   `)
   writeFileSync(join(work, 'tsconfig.json'), JSON.stringify({
@@ -171,12 +180,13 @@ try {
       prepareMdiDocument,
     } from '@illusions-lab/milkdown-plugin-mdi'
     import {
+      hasCompatiblePreparedMdiDocumentVersions,
       initializeMdi as initializeMdiForWorker,
       prepareMdiDocument as prepareMdiDocumentInWorker,
     } from '@illusions-lab/milkdown-plugin-mdi/prepared'
     import { getMdiTextBlocks, parse, renderText, serializeMdi } from '@illusions-lab/mdi'
     await initializeMdi()
-    const prepared = await prepareMdiDocument('{東京|とうきょう}')
+    const prepared = await prepareMdiDocument('{東京|とうきょう}<!--worker note-->')
     if (
       typeof initializeMdi !== 'function' || typeof initializeMdiForWorker !== 'function'
       || typeof prepareMdiDocumentInWorker !== 'function'
@@ -184,7 +194,9 @@ try {
       || typeof createMdiEditorMapping !== 'function' || typeof mdiEditCommand !== 'function'
       || typeof mapMdiSourceSpansToEditorRanges !== 'function'
       || typeof mdiInputRules() !== 'function' || typeof mdiClipboard() !== 'function'
-      || prepared.version !== 1 || structuredClone(prepared).canonicalSource !== prepared.canonicalSource
+      || prepared.version !== 2 || structuredClone(prepared).canonicalSource !== prepared.canonicalSource
+      || !hasCompatiblePreparedMdiDocumentVersions(prepared)
+      || hasCompatiblePreparedMdiDocumentVersions({ ...prepared, mdiIrVersion: '1.0' })
       || !Array.isArray(mdi({ initialDocument: prepared }))
     ) process.exit(1)
     if ([getMdiTextBlocks, parse, renderText, serializeMdi].some((value) => typeof value !== 'function')) process.exit(1)
@@ -197,9 +209,9 @@ try {
     } from '@illusions-lab/milkdown-plugin-mdi/prepared'
 
     void initializeMdi()
-      .then(() => prepareMdiDocument('{東京|とうきょう}'))
+      .then(() => prepareMdiDocument('{東京|とうきょう}<!--worker note-->'))
       .then((prepared) => {
-        postMessage({ version: prepared.version, cloneSafe: structuredClone(prepared).version === 1 })
+        postMessage({ commentsPreserved: prepared.canonicalSource.includes('<!--worker note-->'), version: prepared.version, cloneSafe: structuredClone(prepared).version === 2 })
       })
       .catch((error) => { throw error })
   `)
@@ -216,7 +228,7 @@ try {
       await initializeMdi()
       const initial = [
         '---', 'title: Consumer Contract', '---', '',
-        '{東京|とうきょう} ^12^', '',
+        '{東京|とうきょう}<!--consumer note--> ^12^', '',
         '[[indent:2]]', 'Indented', '',
         '[[bottom]]', 'Bottom', '',
         '[[pagebreak:right]]', '',
@@ -228,7 +240,7 @@ try {
         const worker = new Worker(new URL('./prepared-worker.js', import.meta.url), { type: 'module' })
         worker.addEventListener('message', ({ data }) => {
           worker.terminate()
-          if (!data?.cloneSafe) reject(new Error('prepared Worker result is not clone safe'))
+          if (!data?.cloneSafe || !data?.commentsPreserved) reject(new Error('prepared Worker result is not clone safe'))
           else resolve(data.version)
         }, { once: true })
         worker.addEventListener('error', reject, { once: true })

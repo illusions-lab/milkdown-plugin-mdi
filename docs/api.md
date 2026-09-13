@@ -29,7 +29,7 @@ send the result to the renderer with `postMessage()`.
 
 ```ts
 interface PreparedMdiDocument {
-  version: 1
+  version: 2
   mdiIrVersion: string
   provenanceVersion: string
   canonicalSource: string
@@ -213,3 +213,24 @@ Resizing and font/writing-mode changes call Rust again; nested note and ruby
 heights expand their containing row and retain zero added row spacing.
 During composition only source edits are applied; positions stay frozen until
 composition ends. Enter emits `mdi-warichu-auto-layout` and a visible live status.
+
+## Editorial comments in MDI 2.1
+
+The editor preserves valid `<!-- note -->` comments as hidden document atoms.
+Inline `mdiComment` and block `mdiCommentBlock` nodes store the exact `value`
+and original UTF-8 `span`; editing, clipboard operations and undo keep them with
+their surrounding content. The plugin adds no comment controls or labels.
+
+Synchronous parsing, Worker preparation, paste and `getMdi()` explicitly retain
+comments. Prepared transport version 2 requires MDI IR 1.1. Discard version 1
+caches and call `prepareMdiDocument()` again from their source; incompatible
+caches fail explicitly. Never continue by silently dropping comment nodes.
+
+Body projections and publication output omit valid comments. Default public MDI
+parsing still returns comment-free IR 1.0. Applications that need comment content
+must request `{ includeComments: true }` explicitly. Existing 2.0 documents also
+recognize comments without changing their version declaration. Previously visible
+HTML comment text now disappears from publication output. Unterminated comments
+remain literal and may be exported, with `mdi.comment.unterminated` diagnostics.
+
+The worker-safe `@illusions-lab/milkdown-plugin-mdi/prepared` entry exports `hasCompatiblePreparedMdiDocumentVersions(value)`. Check all prepared, IR, and provenance versions before reusing a cached tree; on incompatibility, prepare the retained original source again.

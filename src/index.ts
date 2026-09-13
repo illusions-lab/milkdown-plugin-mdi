@@ -41,7 +41,7 @@ interface VFileLike {
 
 const createRemarkMdiForMilkdown = (ctx: Ctx) => {
   return function remarkMdiForMilkdown(this: ThisParameterType<typeof remarkMdi>) {
-    remarkMdi.call(this)
+    remarkMdi.call(this, { includeComments: true })
     return (tree: unknown, file: VFileLike) => {
       const source = typeof file.value === 'string' ? file.value : ''
       ctx.set(mdiFrontmatterCtx, normalizeMdiMdastTree(
@@ -83,6 +83,39 @@ const graphemes = (value: string) => {
 const isMdiMark = (value: unknown): value is string => typeof value === 'string'
   && graphemes(value).length === 1
   && !/[\s\p{Cc}\p{Cf}]/u.test(value)
+
+// Editorial payload stays in the document model while occupying no visual space.
+const commentSchema = (block: boolean) => $node(block ? 'mdiCommentBlock' : 'mdiComment', () => ({
+  group: block ? 'block' : 'inline',
+  inline: !block,
+  atom: true,
+  selectable: false,
+  attrs: { value: { default: '' }, span: { default: null } },
+  parseDOM: [{
+    tag: `${block ? 'div' : 'span'}[data-mdi-comment]`,
+    getAttrs: (dom: Node | string) => ({ value: (dom as HTMLElement).getAttribute('data-mdi-comment') ?? '' }),
+  }],
+  toDOM: (node) => [block ? 'div' : 'span', {
+    'data-mdi-comment': String(node.attrs.value),
+    hidden: '',
+    'aria-hidden': 'true',
+    contenteditable: 'false',
+  }],
+  parseMarkdown: {
+    match: (node) => node.type === (block ? 'mdiCommentBlock' : 'mdiComment'),
+    runner: (state, node, type) => {
+      state.addNode(type, { value: typeof node.value === 'string' ? node.value : '', span: node.span ?? null })
+    },
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === (block ? 'mdiCommentBlock' : 'mdiComment'),
+    runner: (state, node) => {
+      state.addNode('mdiComment', undefined, undefined, { value: String(node.attrs.value), span: node.attrs.span })
+    },
+  },
+}))
+const mdiCommentSchema = commentSchema(false)
+const mdiCommentBlockSchema = commentSchema(true)
 
 const mdiRubySchema = $node('mdiRuby', () => ({
   inline: true,
@@ -615,6 +648,8 @@ const createMdiRemarkPlugin = (initialDocument?: PreparedMdiDocument): MilkdownP
 }
 
 const mdiPlugins: MilkdownPlugin[] = [
+  mdiCommentSchema,
+  mdiCommentBlockSchema,
   mdiRubySchema,
   mdiRubyPresentation,
   ...gfmDeleteSchema,

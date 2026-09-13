@@ -73,7 +73,7 @@ describe('upstream MDI text-block integration', () => {
     expect(result.projectionVersion).toBe('1.0')
     expect(result.positionEncoding).toBe('unicode-grapheme-cluster-1-based')
     expect(result.irVersion).toBe('1.0')
-    expect(result.syntaxVersion).toBe('2.0')
+    expect(result.syntaxVersion).toBe('2.1')
     expect(result.document).toEqual(parse(source).document)
     expect(result.diagnostics).toEqual(parse(source).diagnostics)
     expect(result.document.frontmatter?.entries).toEqual(expect.arrayContaining([
