@@ -58,3 +58,5 @@ dialog、selection policy は追加しません。
 source/editor mapping は immutable snapshot です。document transaction
 （undo/redo を含む）の後は upstream MDI 解析と `createMdiEditorMapping()` の両方を
 作り直してください。current-editor mapping action は stale snapshot を拒否します。
+
+割注は本文・フォント・書字方向・有効なインライン寸法の変更後に再配置されます。同等の observer 通知では編集 DOM を再構築せず、表示更新によってフォーカスや保存済み選択範囲を復元しません。通常段落のマウス選択はブラウザーに委ね、独自の文字位置判定とドラッグ処理は注釈文字から開始した場合に限定します。ルビなどのインライン atom の後ろにネイティブキャレットを置けるよう、ProseMirror の段末 separator と BR を非表示にしないでください。

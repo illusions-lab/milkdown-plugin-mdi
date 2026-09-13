@@ -8,6 +8,12 @@ import { getMdi } from '../src/index'
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); delete (Range.prototype as unknown as Record<string, unknown>).getBoundingClientRect })
 
 it('lays out semantic leaves as presentation transactions, freezes composition and cleans up', async () => {
+  let resize!: () => void
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { resize = callback }
+    observe() {}
+    disconnect() {}
+  })
   vi.spyOn(window, 'scrollBy').mockImplementation(() => {})
   const frames: FrameRequestCallback[] = []
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
@@ -27,6 +33,29 @@ it('lays out semantic leaves as presentation transactions, freezes composition a
     const flush = () => { for (let i = 0; frames.length && i < 10; i += 1) frames.shift()!(0) }
     flush()
     expect(view.dom.querySelectorAll('.mdi-warichu-space').length).toBeGreaterThan(0)
+    resize()
+    flush()
+    const settled = dispatch.mock.calls.length
+    const stableWidget = view.dom.querySelector('.mdi-warichu-space')
+    resize()
+    flush()
+    expect(dispatch.mock.calls.length).toBe(settled)
+    expect(view.dom.querySelector('.mdi-warichu-space')).toBe(stableWidget)
+    view.dom.style.letterSpacing = '1px'
+    resize()
+    flush()
+    expect(dispatch.mock.calls.length).toBeGreaterThan(settled)
+    view.dom.style.writingMode = 'vertical-rl'
+    resize()
+    flush()
+    view.dom.style.writingMode = 'horizontal-tb'
+    resize()
+    flush()
+    expect(pluginOutside()).toBe(false)
+    function pluginOutside() {
+      const plugin = view.state.plugins.find(candidate => candidate.getState(view.state) instanceof DecorationSet && candidate.props.handleKeyDown)!
+      return plugin.props.handleDOMEvents?.mousedown?.call(plugin, view, new MouseEvent('mousedown', { clientX: 10000, clientY: 10000 }))
+    }
     expect(getMdi()(ctx)).toBe(canonical)
     expect(dispatch.mock.calls.every(([transaction]) => !transaction.docChanged && transaction.getMeta('addToHistory') === false)).toBe(true)
     const plugin = view.state.plugins.find(candidate => candidate.getState(view.state) instanceof DecorationSet && candidate.props.handleKeyDown)!

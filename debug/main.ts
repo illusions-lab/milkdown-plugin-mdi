@@ -224,6 +224,7 @@ const start = async () => {
 void start()
 
 let warichuDocumentWrites = 0
+let warichuTransactions = 0
 const observedWarichuViews = new WeakSet<object>()
 Object.assign(window, { __MDI_WARICHU__: {
   load: (source: string) => editor?.action(ctx => {
@@ -232,7 +233,7 @@ Object.assign(window, { __MDI_WARICHU__: {
     if (!observedWarichuViews.has(view)) {
       observedWarichuViews.add(view)
       const dispatch = view.dispatch.bind(view)
-      view.dispatch = transaction => { if (transaction.docChanged) warichuDocumentWrites += 1; dispatch(transaction) }
+      view.dispatch = transaction => { warichuTransactions += 1; if (transaction.docChanged) warichuDocumentWrites += 1; dispatch(transaction) }
     }
     view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, doc.content).setMeta('addToHistory', false))
     view.dom.style.position = 'relative'
@@ -242,6 +243,7 @@ Object.assign(window, { __MDI_WARICHU__: {
     return getMdi()(ctx)
   }),
   writes: () => warichuDocumentWrites,
+  transactions: () => warichuTransactions,
   source: () => editor?.action(getMdi()),
   insert: (text: string) => editor?.action(ctx => { const view = ctx.get(editorViewCtx); view.dispatch(view.state.tr.insertText(text)) }),
   range: () => editor?.action(ctx => { const selection = ctx.get(editorViewCtx).state.selection; return { from: selection.from, to: selection.to } }),

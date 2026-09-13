@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1 - 2026-09-13
+
+- Stop equivalent warichu layout notifications from rebuilding editable decorations or restoring stale focus.
+- Keep reservation identities stable across partial reflow and leave body-paragraph mouse selection native.
+- Discard obsolete layout work and retain composition deferral without changing canonical MDI or public APIs.
+
 ## 0.7.0 - 2026-09-04
 
 - Replace the warichu mark with an editable inline node; add `setWarichu` / `removeWarichu` while preserving legacy command and selection-query aliases.

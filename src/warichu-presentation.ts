@@ -106,17 +106,31 @@ export const mdiWarichuPresentation = $prose(() => {
   const measuredUnits = new WeakMap<ProseNode, { signature: string; unit: number; attempts: number }>()
   const layout = 'layoutMdiWarichu' in mdiRuntime ? (mdiRuntime as unknown as { layoutMdiWarichu?: Layout }).layoutMdiWarichu : undefined
   const schedule = () => {
-    if (!layout || !notePositions.size || disposed || composing || frame || typeof requestAnimationFrame !== 'function') return
+    if (!layout || !notePositions.size || disposed || composing || dirtyFrom === Infinity || frame || typeof requestAnimationFrame !== 'function') return
     frame = requestAnimationFrame(() => {
       frame = 0
       if (disposed || composing) return
       if (currentView.composing) { schedule(); return }
       const view = currentView
-      const hadFocus = view.hasFocus()
+      const measuredDocument = view.state.doc
+      const commit = (decorations: Decoration[]) => {
+        if (disposed || view.isDestroyed || view.state.doc !== measuredDocument) return false
+        const next = DecorationSet.create(measuredDocument, decorations)
+        const previous = key.getState(view.state)?.find() ?? []
+        const entries = next.find()
+        const equivalent = previous.length === entries.length && previous.every((entry, index) => {
+          const other = entries[index]!
+          return entry.from === other.from && entry.to === other.to &&
+            JSON.stringify(entry.spec) === JSON.stringify(other.spec)
+        })
+        if (!equivalent)
+          view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+        return !disposed && !view.isDestroyed && view.state.doc === measuredDocument
+      }
       const decorate = (from: number, to: number, attrs: Record<string, string>) => {
         const node = view.state.doc.nodeAt(from)
         return node && !node.isText && node.nodeSize === to - from
-          ? Decoration.node(from, to, attrs) : Decoration.inline(from, to, attrs)
+          ? Decoration.node(from, to, attrs, { layout: attrs }) : Decoration.inline(from, to, attrs, { layout: attrs })
       }
       const threshold = dirtyFrom
       dirtyFrom = Infinity
@@ -134,7 +148,6 @@ export const mdiWarichuPresentation = $prose(() => {
         widget.style.blockSize = `${item.blockSize}px`
         return widget
       }, { side: -1, key: `warichu-${item.id}-${item.width}-${item.blockSize}-${item.font}-${item.vertical}` })
-      let sequence = 0
       notePositions.forEach(pos => {
         if (pos < threshold) return
         const node = view.state.doc.nodeAt(pos)
@@ -171,8 +184,8 @@ export const mdiWarichuPresentation = $prose(() => {
           if (child.type.name === 'mdiBreak') breaks.push(pos + 1 + offset)
         })
         let sourceCursor = pos + 1
-        fragments.forEach(fragment => {
-          const id = `${pos}-${sequence++}`
+        fragments.forEach((fragment, sequence) => {
+          const id = `${pos}-${sequence}`
           const ranges = fragment.sources.map(line => line.flatMap(source => {
             const leaf = leaves.get(source.path.join('.'))
             if (!leaf) return []
@@ -208,7 +221,7 @@ export const mdiWarichuPresentation = $prose(() => {
         })
         return false
       })
-      view.dispatch(view.state.tr.setMeta(key, DecorationSet.create(view.state.doc, [...retained, ...decorations])).setMeta('addToHistory', false))
+      if (!commit([...retained, ...decorations])) return
       // Measure actual advances, including inherited tracking and formatted runs.
       // Retry Rust with a measured half-unit when its nominal units under-reserve.
       for (const widget of widgets) {
@@ -234,7 +247,7 @@ export const mdiWarichuPresentation = $prose(() => {
         }
       }
       const sizedWidgets = widgets.map(widgetDecoration)
-      view.dispatch(view.state.tr.setMeta(key, DecorationSet.create(view.state.doc, [...retained, ...sizedWidgets, ...editable.map(item => decorate(item.from, item.to, item.attrs))])).setMeta('addToHistory', false))
+      if (!commit([...retained, ...sizedWidgets, ...editable.map(item => decorate(item.from, item.to, item.attrs))])) return
       // All reservations now reflect measured rows; read their resulting locations.
       const placements = Array.from(view.dom.querySelectorAll<HTMLElement>('.mdi-warichu-space')).filter(widget => editable.some(item => item.attrs['data-mdi-fragment-line'] === widget.dataset.mdiFragment)).map(widget => ({
         id: widget.dataset.mdiFragment, rect: widget.getBoundingClientRect(),
@@ -270,8 +283,7 @@ export const mdiWarichuPresentation = $prose(() => {
       }
       const positioned = [...retained, ...sizedWidgets]
       positioned.push(...positionedLines)
-      view.dispatch(view.state.tr.setMeta(key, DecorationSet.create(view.state.doc, positioned)).setMeta('addToHistory', false))
-      if (hadFocus) view.focus()
+      if (!commit(positioned)) return
       if (dirtyFrom !== Infinity) schedule()
     })
   }
@@ -336,8 +348,8 @@ export const mdiWarichuPresentation = $prose(() => {
       handleDOMEvents: {
         mousedown: (view, event) => {
           if (composing || !notePositions.size || event.button !== 0 || event.detail > 1) return false
-          const start = hitPosition(view, event) ?? view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos
-          if (start === undefined) return false
+          const start = hitPosition(view, event)
+          if (start === null) return false
           const anchor = event.shiftKey ? view.state.selection.anchor : start
           let dragging = false
           const select = (next: MouseEvent) => {
@@ -420,8 +432,36 @@ export const mdiWarichuPresentation = $prose(() => {
     },
     view: view => {
       currentView = view
-      const attributes = typeof MutationObserver === 'function' ? new MutationObserver(invalidateAll) : null
-      const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(invalidateAll) : null
+      // Observe effective inputs, not attribute notifications or the block-size
+      // changes produced by our own reservations. Selection/focus classes often
+      // change without affecting typography and must not rebuild editable DOM.
+      const inputs = () => {
+        const values: string[] = []
+        const elements = new Set<HTMLElement>([view.dom])
+        for (const pos of notePositions) {
+          const paragraph = (view.nodeDOM(pos) as HTMLElement | null)?.closest<HTMLElement>('p,li,h1,h2,h3,h4,h5,h6')
+          if (paragraph) elements.add(paragraph)
+        }
+        for (const element of elements) {
+          const style = getComputedStyle(element)
+          const vertical = style.writingMode.startsWith('vertical')
+          const box = element.getBoundingClientRect()
+          values.push([style.writingMode, style.fontFamily, style.fontSize, style.fontWeight,
+            style.fontStyle, style.letterSpacing, style.lineHeight, style.paddingInlineStart,
+            style.paddingInlineEnd, vertical ? element.clientHeight : element.clientWidth,
+            vertical ? box.height : box.width].join('|'))
+        }
+        return values.join(';')
+      }
+      let previousInputs = inputs()
+      const inputsChanged = () => {
+        const next = inputs()
+        if (next === previousInputs) return
+        previousInputs = next
+        invalidateAll()
+      }
+      const attributes = typeof MutationObserver === 'function' ? new MutationObserver(inputsChanged) : null
+      const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(inputsChanged) : null
       let observing = false
       const activate = () => {
         if (notePositions.size && !observing) {

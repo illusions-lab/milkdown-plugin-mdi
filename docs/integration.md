@@ -59,3 +59,5 @@ policy.
 Source/editor mappings are immutable snapshots. Recompute both upstream MDI
 analysis and `createMdiEditorMapping()` after a document change, including
 undo/redo; stale snapshots are rejected by the current-editor mapping action.
+
+Warichu reflows after document, font, writing-mode or effective inline-size changes. Equivalent observer notifications leave the editable DOM stable, and presentation updates never restore focus or a saved selection. Body paragraphs retain native mouse selection; custom glyph hits and dragging apply only when starting inside annotation text. Keep ProseMirror’s trailing separator and break visible so a native caret can reach the end of a paragraph containing an inline atom such as Ruby.

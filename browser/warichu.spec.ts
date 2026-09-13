@@ -261,3 +261,47 @@ test('ruby annotation glyphs stay inside the reserved row extent', async ({ page
   })
   expect(contained).toBe(true)
 })
+
+
+test('idle presentation stops transactions and preserves native selection outside warichu', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.__MDI_SMOKE__?.ready)
+  await page.evaluate(() => {
+    const api = (window as unknown as { __MDI_WARICHU__: { load(source: string): void; select(pos: number): void } }).__MDI_WARICHU__
+    api.load('前\n\n\\\n\n文[[warichu:注釈]]\n\n終')
+    api.select(1)
+  })
+  await expect(page.locator('.mdi-warichu-space')).toBeAttached()
+  await page.waitForTimeout(300)
+  const transactions = () => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { transactions(): number } }).__MDI_WARICHU__.transactions())
+  const count = await transactions()
+  await page.waitForTimeout(300)
+  expect(await transactions()).toBe(count)
+  const empty = page.locator('.ProseMirror > p').nth(1)
+  await empty.click()
+  await page.waitForTimeout(300)
+  expect(await page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { position(): number } }).__MDI_WARICHU__.position())).toBe(4)
+  expect(await empty.evaluate(element => element.contains(window.getSelection()?.anchorNode ?? null))).toBe(true)
+  await page.keyboard.insertText('末')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { source(): string } }).__MDI_WARICHU__.source())).toContain('前\n\n末\n\n文[[warichu:注釈]]')
+})
+
+test('native caret after trailing Ruby preserves the atom when typing', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => window.__MDI_SMOKE__?.ready)
+  await page.evaluate(() => {
+    const api = (window as unknown as { __MDI_WARICHU__: { load(source: string): void; select(pos: number): void } }).__MDI_WARICHU__
+    api.load('文{東|ひがし}')
+    api.select(1)
+  })
+  await page.waitForTimeout(250)
+  const point = await page.locator('.ProseMirror p').evaluate(element => {
+    const ruby = element.querySelector('ruby')!.getBoundingClientRect()
+    const paragraph = element.getBoundingClientRect()
+    return { x: ruby.right + 2, y: paragraph.top + paragraph.height / 2 }
+  })
+  await page.mouse.click(point.x, point.y)
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { position(): number } }).__MDI_WARICHU__.position())).toBe(3)
+  await page.keyboard.insertText('末')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { source(): string } }).__MDI_WARICHU__.source())).toBe('文{東|ひがし}末\n')
+})
