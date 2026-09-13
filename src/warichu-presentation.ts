@@ -65,6 +65,17 @@ const utf16Offset = (text: string, bytes: number) => {
   return units
 }
 
+export const nativeTextSelectionPending = (view: EditorView) => {
+  const selection = view.dom.ownerDocument.getSelection()
+  if (selection === null) return false
+  if (selection.anchorNode === null) return false
+  if (selection.focusNode === null) return false
+  if (!view.dom.contains(selection.anchorNode)) return false
+  if (!view.dom.contains(selection.focusNode)) return false
+  return view.posAtDOM(selection.anchorNode, selection.anchorOffset) !== view.state.selection.anchor ||
+    view.posAtDOM(selection.focusNode, selection.focusOffset) !== view.state.selection.head
+}
+
 const hitPosition = (view: EditorView, event: Pick<MouseEvent, 'clientX' | 'clientY'>): number | null => {
           const line = Array.from(view.dom.querySelectorAll<HTMLElement>('.mdi-warichu-editable-line')).find(element => {
             const rect = element.getBoundingClientRect()
@@ -115,6 +126,14 @@ export const mdiWarichuPresentation = $prose(() => {
       const measuredDocument = view.state.doc
       const commit = (decorations: Decoration[]) => {
         if (disposed || view.isDestroyed || view.state.doc !== measuredDocument) return false
+        // A native click updates the DOM selection before ProseMirror receives
+        // selectionchange. A presentation-only transaction in that interval
+        // would reinstall the old state selection and erase the click.
+        if (nativeTextSelectionPending(view)) {
+          dirtyFrom = Math.min(dirtyFrom, threshold)
+          view.dom.ownerDocument.addEventListener('selectionchange', schedule, { once: true })
+          return false
+        }
         const next = DecorationSet.create(measuredDocument, decorations)
         const previous = key.getState(view.state)?.find() ?? []
         const entries = next.find()
@@ -484,7 +503,7 @@ export const mdiWarichuPresentation = $prose(() => {
       schedule()
       return {
         update: (next, previous) => { currentView = next; activate(); if (!next.state.doc.eq(previous.doc)) schedule() },
-        destroy: () => { disposed = true; if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame); observer?.disconnect(); attributes?.disconnect(); announcement?.remove(); dragCleanup?.(); document.fonts?.removeEventListener('loadingdone', invalidateAll) },
+        destroy: () => { disposed = true; if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame); observer?.disconnect(); attributes?.disconnect(); announcement?.remove(); dragCleanup?.(); view.dom.ownerDocument.removeEventListener('selectionchange', schedule); document.fonts?.removeEventListener('loadingdone', invalidateAll) },
       }
     },
   })

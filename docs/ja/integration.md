@@ -59,6 +59,6 @@ source/editor mapping は immutable snapshot です。document transaction
 （undo/redo を含む）の後は upstream MDI 解析と `createMdiEditorMapping()` の両方を
 作り直してください。current-editor mapping action は stale snapshot を拒否します。
 
-割注は本文・フォント・書字方向・有効なインライン寸法の変更後に再配置されます。同等の observer 通知では編集 DOM を再構築せず、表示更新によってフォーカスや保存済み選択範囲を復元しません。通常段落のマウス選択はブラウザーに委ね、独自の文字位置判定とドラッグ処理は注釈文字から開始した場合に限定します。ルビなどのインライン atom の後ろにネイティブキャレットを置けるよう、ProseMirror の段末 separator と BR を非表示にしないでください。
+割注は本文・フォント・書字方向・有効なインライン寸法の変更後に再配置されます。同等の observer 通知では編集 DOM を再構築しません。ネイティブのポインター選択が DOM では変化し、ProseMirror への同期を待っている間は表示トランザクションを延期するため、再配置が直前の選択範囲を復元することはありません。通常段落のマウス選択はブラウザーに委ね、独自の文字位置判定とドラッグ処理は注釈文字から開始した場合に限定します。ルビなどのインライン atom の後ろにネイティブキャレットを置けるよう、ProseMirror の段末 separator と BR を非表示にしないでください。
 
 エディターでは原生ルビを内部の `.mdi-ruby-atom` node view で包み、段末のキャレット判定がルビの注釈へ戻ることを防ぎます。このラッパーは schema、クリップボード HTML、保存する MDI には含まれず、ルビ本体の選択は引き続き可能です。

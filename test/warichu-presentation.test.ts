@@ -4,11 +4,42 @@ import { DecorationSet } from '@milkdown/prose/view'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createEditor } from './harness'
 import { getMdi } from '../src/index'
+import { nativeTextSelectionPending } from '../src/warichu-presentation'
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); delete (Range.prototype as unknown as Record<string, unknown>).getBoundingClientRect })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); delete (Range.prototype as unknown as Record<string, unknown>).getBoundingClientRect; delete (document as unknown as Record<string, unknown>).fonts })
+
+it('detects a native DOM selection waiting for the editor state', () => {
+  const anchor = document.createTextNode('anchor')
+  const focus = document.createTextNode('focus')
+  const dom = document.createElement('div')
+  dom.append(anchor, focus)
+  const selection = { anchorNode: anchor, anchorOffset: 0, focusNode: focus, focusOffset: 0 }
+  const view = {
+    state: { selection: { anchor: 1, head: 2 } },
+    dom: { ownerDocument: { getSelection: () => selection }, contains: (node: Node) => node === anchor || node === focus },
+    posAtDOM: (node: Node): number => node === anchor ? 1 : 3,
+  }
+  expect(nativeTextSelectionPending(view as never)).toBe(true)
+  view.posAtDOM = (node: Node) => node === anchor ? 3 : 2
+  expect(nativeTextSelectionPending(view as never)).toBe(true)
+  view.posAtDOM = (node: Node) => node === anchor ? 1 : 2
+  expect(nativeTextSelectionPending(view as never)).toBe(false)
+  view.dom.contains = () => false
+  expect(nativeTextSelectionPending(view as never)).toBe(false)
+  view.dom.ownerDocument.getSelection = () => ({ ...selection, anchorNode: null }) as never
+  expect(nativeTextSelectionPending(view as never)).toBe(false)
+  view.dom.ownerDocument.getSelection = () => ({ ...selection, focusNode: null }) as never
+  expect(nativeTextSelectionPending(view as never)).toBe(false)
+  view.dom.contains = (node: Node) => node === anchor
+  view.dom.ownerDocument.getSelection = () => selection
+  expect(nativeTextSelectionPending(view as never)).toBe(false)
+  view.dom.ownerDocument.getSelection = () => null as never
+  expect(nativeTextSelectionPending(view as never)).toBe(false)
+})
 
 it('lays out semantic leaves as presentation transactions, freezes composition and cleans up', async () => {
   let resize!: () => void
+  Object.defineProperty(document, 'fonts', { configurable: true, value: { addEventListener: vi.fn(), removeEventListener: vi.fn() } })
   vi.stubGlobal('ResizeObserver', class {
     constructor(callback: () => void) { resize = callback }
     observe() {}
@@ -41,8 +72,20 @@ it('lays out semantic leaves as presentation transactions, freezes composition a
     flush()
     expect(dispatch.mock.calls.length).toBe(settled)
     expect(view.dom.querySelector('.mdi-warichu-space')).toBe(stableWidget)
+    view.focus()
+    const native = window.getSelection()!
+    const nativeRange = document.createRange()
+    nativeRange.setStart(view.dom.querySelector('p')!.firstChild!, 1)
+    nativeRange.collapse(true)
+    native.removeAllRanges()
+    native.addRange(nativeRange)
+    const beforeNativeSelectionSync = dispatch.mock.calls.length
     view.dom.style.letterSpacing = '1px'
     resize()
+    frames.shift()!(0)
+    expect(dispatch.mock.calls.length).toBe(beforeNativeSelectionSync)
+    document.dispatchEvent(new Event('selectionchange'))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)))
     flush()
     expect(dispatch.mock.calls.length).toBeGreaterThan(settled)
     view.dom.style.writingMode = 'vertical-rl'
@@ -57,7 +100,8 @@ it('lays out semantic leaves as presentation transactions, freezes composition a
       return plugin.props.handleDOMEvents?.mousedown?.call(plugin, view, new MouseEvent('mousedown', { clientX: 10000, clientY: 10000 }))
     }
     expect(getMdi()(ctx)).toBe(canonical)
-    expect(dispatch.mock.calls.every(([transaction]) => !transaction.docChanged && transaction.getMeta('addToHistory') === false)).toBe(true)
+    expect(dispatch.mock.calls.every(([transaction]) => !transaction.docChanged &&
+      (transaction.selectionSet || transaction.getMeta('addToHistory') === false))).toBe(true)
     const plugin = view.state.plugins.find(candidate => candidate.getState(view.state) instanceof DecorationSet && candidate.props.handleKeyDown)!
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 4)))
     expect(plugin.props.handleClick?.call(plugin, view, 0, new MouseEvent('click', { clientX: 1, clientY: 1, detail: 1 }))).toBe(true)
@@ -126,11 +170,16 @@ it('lays out semantic leaves as presentation transactions, freezes composition a
 it('does not send nonfinite capacities for an unmeasurable hidden paragraph', async () => {
   const frames: FrameRequestCallback[] = []
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
-  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  vi.stubGlobal('MutationObserver', undefined)
+  vi.stubGlobal('ResizeObserver', undefined)
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    x: 0, y: 0, left: 0, top: 0, right: 20, bottom: 20, width: 20, height: 20, toJSON() {},
+  })
   const editor = await createEditor('[[warichu:注記]]')
   editor.action(ctx => {
     const view = ctx.get(editorViewCtx)
-    view.coordsAtPos = () => ({ left: 0, right: 0, top: 0, bottom: 0 })
+    view.dom.querySelectorAll('p').forEach(paragraph => { paragraph.style.fontSize = '20px' })
+    view.coordsAtPos = () => ({ left: Number.POSITIVE_INFINITY, right: 0, top: 0, bottom: 0 })
     const canonical = getMdi()(ctx)
     expect(() => { while (frames.length) frames.shift()!(0) }).not.toThrow()
     expect(view.dom.querySelector('.mdi-warichu-space')).toBeNull()

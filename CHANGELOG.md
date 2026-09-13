@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2 - 2026-09-13
+
+- Defer warichu presentation transactions while a native pointer selection is waiting for ProseMirror synchronization, preventing concurrent font or layout reflow from restoring the preceding text selection.
+
 ## 0.7.1 - 2026-09-13
 
 - Isolate native Ruby layout inside a selectable editor-only atom so trailing clicks retain a text caret across Chromium platforms; keep schema and serialized HTML/MDI unchanged.
@@ -78,6 +82,7 @@ First public release.
 - Keep parsing, text projection, text blocks, search, indexing, and AI policy in `@illusions-lab/mdi` and application code.
 - Require the stable MDI text-block projection contract and document direct `getMdiTextBlocks()` integration without adding a plugin proxy API.
 - Verify unit, malformed-input, deterministic fuzz, performance, tarball, minimum-peer, browser, and documentation contracts.
+
 ## 0.5.0
 
 - Represent semantic MDI blank lines as editable paragraph nodes.

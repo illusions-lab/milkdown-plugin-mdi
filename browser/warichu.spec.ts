@@ -289,6 +289,9 @@ test('idle presentation stops transactions and preserves native selection outsid
   expect(await transactions()).toBe(reflowed)
   expect(await page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { writes(): number } }).__MDI_WARICHU__.writes())).toBe(0)
   const empty = page.locator('.ProseMirror > p').nth(1)
+  await empty.evaluate(() => {
+    document.addEventListener('mouseup', () => document.fonts.dispatchEvent(new Event('loadingdone')), { capture: true, once: true })
+  })
   await empty.click()
   await page.waitForTimeout(300)
   expect(await page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { position(): number } }).__MDI_WARICHU__.position())).toBe(4)
