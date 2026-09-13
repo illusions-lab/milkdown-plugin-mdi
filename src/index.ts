@@ -14,6 +14,7 @@ import { $prose } from '@milkdown/utils'
 import { Plugin } from '@milkdown/prose/state'
 import type { MarkdownNode } from '@milkdown/transformer'
 import { mdastToMdiSource } from 'mdast-util-mdi'
+import { mdiRubyPresentation } from './ruby-presentation.js'
 import { mdiWarichuPresentation } from './warichu-presentation.js'
 import { installMdiProvenanceParser } from './provenance.js'
 import {
@@ -615,6 +616,7 @@ const createMdiRemarkPlugin = (initialDocument?: PreparedMdiDocument): MilkdownP
 
 const mdiPlugins: MilkdownPlugin[] = [
   mdiRubySchema,
+  mdiRubyPresentation,
   ...gfmDeleteSchema,
   ...mdiLiteralSchema,
   ...mdiTcySchema,

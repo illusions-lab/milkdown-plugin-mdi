@@ -2,6 +2,8 @@
 
 ## 0.7.1 - 2026-09-13
 
+- Isolate native Ruby layout inside a selectable editor-only atom so trailing clicks retain a text caret across Chromium platforms; keep schema and serialized HTML/MDI unchanged.
+
 - Stop equivalent warichu layout notifications from rebuilding editable decorations or restoring stale focus.
 - Keep reservation identities stable across partial reflow and leave body-paragraph mouse selection native.
 - Discard obsolete layout work and retain composition deferral without changing canonical MDI or public APIs.

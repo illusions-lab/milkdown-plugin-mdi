@@ -1,3 +1,8 @@
+.mdi-ruby-atom {
+  display: inline-block;
+  text-indent: 0;
+}
+
 .mdi-ruby {
   ruby-align: center;
   ruby-position: over;

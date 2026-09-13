@@ -277,6 +277,17 @@ test('idle presentation stops transactions and preserves native selection outsid
   const count = await transactions()
   await page.waitForTimeout(300)
   expect(await transactions()).toBe(count)
+  await page.locator('.ProseMirror').evaluate(element => {
+    const root = element as HTMLElement
+    root.style.width = '240px'
+    root.style.zoom = '1.25'
+    document.fonts.dispatchEvent(new Event('loadingdone'))
+  })
+  await page.waitForTimeout(300)
+  const reflowed = await transactions()
+  await page.waitForTimeout(300)
+  expect(await transactions()).toBe(reflowed)
+  expect(await page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { writes(): number } }).__MDI_WARICHU__.writes())).toBe(0)
   const empty = page.locator('.ProseMirror > p').nth(1)
   await empty.click()
   await page.waitForTimeout(300)
@@ -286,7 +297,8 @@ test('idle presentation stops transactions and preserves native selection outsid
   await expect.poll(() => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { source(): string } }).__MDI_WARICHU__.source())).toContain('前\n\n末\n\n文[[warichu:注釈]]')
 })
 
-test('native caret after trailing Ruby preserves the atom when typing', async ({ page }) => {
+for (const vertical of [false, true]) {
+test(`native caret after trailing Ruby preserves the atom when typing (vertical=${vertical})`, async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => window.__MDI_SMOKE__?.ready)
   await page.evaluate(() => {
@@ -294,14 +306,17 @@ test('native caret after trailing Ruby preserves the atom when typing', async ({
     api.load('文{東|ひがし}')
     api.select(1)
   })
+  if (vertical) await page.locator('.ProseMirror').evaluate(element => { (element as HTMLElement).style.writingMode = 'vertical-rl'; (element as HTMLElement).style.height = '220px' })
   await page.waitForTimeout(250)
   const point = await page.locator('.ProseMirror p').evaluate(element => {
     const ruby = element.querySelector('ruby')!.getBoundingClientRect()
     const paragraph = element.getBoundingClientRect()
-    return { x: ruby.right + 2, y: paragraph.top + paragraph.height / 2 }
+    return getComputedStyle(element).writingMode.startsWith('vertical') ? { x: paragraph.left + paragraph.width / 2, y: ruby.bottom + 2 } : { x: ruby.right + 2, y: paragraph.top + paragraph.height / 2 }
   })
   await page.mouse.click(point.x, point.y)
   await expect.poll(() => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { position(): number } }).__MDI_WARICHU__.position())).toBe(3)
   await page.keyboard.insertText('末')
   await expect.poll(() => page.evaluate(() => (window as unknown as { __MDI_WARICHU__: { source(): string } }).__MDI_WARICHU__.source())).toBe('文{東|ひがし}末\n')
 })
+
+}
