@@ -44,3 +44,14 @@ with the released version. This independently installs from npm and checks publi
 exports, Worker preparation, stylesheet/WASM assets, comment preservation, body
 projection, and prepared transport in Chromium, Firefox, and WebKit. Local
 candidate substitutions are not accepted for release verification.
+
+## GitHub tag permission
+
+GitHub can require `workflows: write` when tagging an older verified commit whose
+workflow files differ from main. The npm publisher remains OIDC-only. The
+separate `finalize` job accepts `RELEASE_GITHUB_TOKEN` only from the `release`
+environment for this GitHub metadata operation. Prefer a repository-scoped GitHub
+App or fine-grained token with contents/workflows write. If a bootstrap credential
+is used, store it directly in that environment and remove it immediately after
+recovery; never write it to the checkout or logs. Finalization downloads the
+verified archive and performs no dependency installation or npm publication.

@@ -116,15 +116,36 @@ jobs:
         run: npm publish "$ARCHIVE" --ignore-scripts --access public --provenance
       - name: Wait for matching registry bytes
         run: node scripts/release-artifact.mjs confirm
-      - name: Create tag and GitHub Release
+
+  finalize:
+    needs: publish
+    runs-on: ${{ inputs.publish_runner }}
+    environment: release
+    permissions:
+      contents: write
+      actions: read
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: npm-original-${{ inputs.version }}
+          path: release-artifacts
+      - name: Create verified tag and release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
         run: |
           tag="v$RELEASE_VERSION"
-          if git ls-remote --exit-code origin "refs/tags/$tag"; then
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
             git fetch origin "refs/tags/$tag:refs/tags/$tag"
             test "$(git rev-parse "$tag^{commit}")" = "$CANDIDATE_SHA"
           else
-            git tag "$tag" "$CANDIDATE_SHA"
-            git push origin "$tag"
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$tag" -f "sha=$CANDIDATE_SHA"
           fi
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --verify-tag --title "$tag" --notes-file CHANGELOG.md release-artifacts/*
