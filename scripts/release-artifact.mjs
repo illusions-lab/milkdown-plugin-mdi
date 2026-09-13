@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, readdirSync, appendFileSync } from 'node:f
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+export const archivePath = file => `./release-artifacts/${file}`
 export const digest = bytes => createHash('sha512').update(bytes).digest('base64')
 export function verifyArtifact(manifest, bytes, expected) {
   if (manifest.sha !== expected.sha || manifest.version !== expected.version || manifest.name !== expected.name)
@@ -47,7 +48,7 @@ async function main() {
       if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 15000))
     }
     if (mode === 'confirm' && !published) throw new Error('Registry visibility pending; recover using the original artifact, do not republish')
-    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `published=${published}\narchive=${directory}/${manifest.file}\n`)
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `published=${published}\narchive=${archivePath(manifest.file)}\n`)
   }
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main()

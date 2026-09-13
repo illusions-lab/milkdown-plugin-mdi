@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { digest, registryMatches, verifyArtifact } from './release-artifact.mjs'
+import { archivePath, digest, registryMatches, verifyArtifact } from './release-artifact.mjs'
 const bytes = Buffer.from('original archive')
 const expected = { name: 'package', version: '0.8.0', sha: 'candidate' }
 const manifest = { ...expected, integrity: `sha512-${digest(bytes)}` }
@@ -19,4 +19,8 @@ test('an existing version is skipped only when its downloaded bytes match', asyn
 test('only a missing version permits publication; registry failures stop the job', async () => {
   assert.equal(await registryMatches(manifest, bytes, async () => new Response('', { status: 404 })), false)
   await assert.rejects(registryMatches(manifest, bytes, async () => new Response('', { status: 503 })), /Registry read failed/)
+})
+
+test('publication uses an explicit local path instead of a GitHub shorthand', () => {
+  assert.equal(archivePath('package-0.8.0.tgz'), './release-artifacts/package-0.8.0.tgz')
 })
