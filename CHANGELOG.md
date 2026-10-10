@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Update `@illusions-lab/mdi` and `@illusions-lab/mdi-remark` to 2.1.2.
+
 ## 0.8.0 - Editorial comments
 
 - Preserve MDI 2.1 comments through parsing, Worker preparation, editing, paste and source saving with hidden inline and block atoms.
