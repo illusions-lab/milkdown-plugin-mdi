@@ -1,3 +1,10 @@
+## 0.9.0
+
+- Breaking: reject paragraph layout that the MDI format cannot persist, including nested, conflicting, out-of-range and empty layout on export.
+- Add `inspectMdiDocument`, `guardMdiCommand`, and `MdiDocumentValidationError`.
+- Install a transaction filter by default; preserve legacy invalid state for explicit repair.
+- Keep #25 IME normalization changes separate from the #24 persistence contract.
+
 # Changelog
 
 ## Unreleased

@@ -1,3 +1,4 @@
+import { allowsMdiTransaction, assertMdiDocument } from './layout-contract.js'
 import { createSlice, createTimer, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
 import remarkMdi from '@illusions-lab/mdi-remark'
 import {
@@ -5,6 +6,8 @@ import {
   editorStateTimerCtx,
   InitReady,
   ParserReady,
+  SerializerReady,
+  serializerCtx,
   remarkPluginsCtx,
   remarkStringifyOptionsCtx,
 } from '@milkdown/core'
@@ -627,6 +630,11 @@ const createMdiRemarkPlugin = (initialDocument?: PreparedMdiDocument): MilkdownP
       source: initialDocument.canonicalSource,
       document: initialDocument.document as MarkdownNode,
     } : undefined)
+    await ctx.wait(SerializerReady)
+    ctx.update(serializerCtx, serialize => doc => {
+      assertMdiDocument(doc)
+      return serialize(doc)
+    })
     ctx.done(mdiProvenanceReady)
     return () => {
       ctx.update(remarkPluginsCtx, (plugins) => plugins.filter((plugin) => plugin !== entry))
@@ -664,6 +672,7 @@ const mdiPlugins: MilkdownPlugin[] = [
   mdiPagebreakSchema,
   ...mdiParagraphSchema,
   mdiBlankNormalization,
+  $prose(() => new Plugin({ filterTransaction: (tr, state) => allowsMdiTransaction(tr, state.doc) })),
 ]
 
 interface MdiPluginOptions {
@@ -694,3 +703,6 @@ export * from './mapping.js'
 export * from './projection.js'
 export { prepareMdiDocument } from './prepared.js'
 export type { PreparedMdiDocument, StructuredCloneSafeMdast } from './prepared.js'
+
+export { inspectMdiDocument, guardMdiCommand, MdiDocumentValidationError } from './layout-contract.js'
+export type { MdiDocumentIssue, MdiDocumentIssueCode } from './layout-contract.js'

@@ -54,7 +54,7 @@ jobs:
         with:
           script: |
             const { CANDIDATE_SHA: sha, RELEASE_VERSION: version, RECOVERY_RUN_ID: recovery } = process.env
-            if (!/^[a-f0-9]{40}$/.test(sha) || !/^0\.8\.\d+$/.test(version)) throw new Error('Invalid candidate or version')
+            if (!/^[a-f0-9]{40}$/.test(sha) || !/^0\.9\.\d+$/.test(version)) throw new Error('Invalid candidate or version')
             if (context.ref !== 'refs/heads/main') throw new Error('Dispatch Release from main')
             const repo = context.repo
             const comparison = await github.rest.repos.compareCommitsWithBasehead({ ...repo, basehead: `${sha}...main` })

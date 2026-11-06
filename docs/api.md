@@ -234,3 +234,42 @@ HTML comment text now disappears from publication output. Unterminated comments
 remain literal and may be exported, with `mdi.comment.unterminated` diagnostics.
 
 The worker-safe `@illusions-lab/milkdown-plugin-mdi/prepared` entry exports `hasCompatiblePreparedMdiDocumentVersions(value)`. Check all prepared, IR, and provenance versions before reusing a cached tree; on incompatibility, prepare the retained original source again.
+
+
+## Paragraph layout contract (0.9.0)
+
+Only nonempty paragraphs directly under the document root can receive layout.
+`indent` accepts integers 1–4294967295; `bottom` accepts 0–4294967295
+(0 serializes as `[[bottom]]`). The two attributes are mutually exclusive.
+Quotes, lists and all nested containers do not support paragraph layout.
+
+`inspectMdiDocument(doc)` returns `{ code, pos }` diagnostics. Stable codes are
+`layout-context`, `layout-conflict`, `layout-value` and `layout-empty`.
+`getMdi()`, `getMarkdown()` and the registered serializer throw
+`MdiDocumentValidationError` with an `issues` array when layout cannot be saved.
+Clipboard helpers retain their `null` failure result.
+
+Wrap standard single-dispatch ProseMirror commands with
+`guardMdiCommand(command)` for matching query and execution results. MDI commands
+already include this guard. Unwrapped third-party commands may return `true`
+even when the default transaction filter rejects their transaction.
+
+Migration: legacy JSON can still be loaded and inspected. Unrelated edits and
+repairs remain possible. Clear invalid layout or move paragraphs to the root
+before saving. Deleting all text from a laid-out paragraph is allowed, but
+saving then requires clearing its layout. Rejected transactions do not dispatch
+or automatically clear attributes. Undo that reintroduces invalid layout is
+also rejected. Container text resembling layout syntax remains ordinary text.
+
+
+```ts
+import { getMdi, MdiDocumentValidationError } from '@illusions-lab/milkdown-plugin-mdi'
+
+try {
+  const source = editor.action(getMdi())
+  // Persist source here.
+} catch (error) {
+  if (!(error instanceof MdiDocumentValidationError)) throw error
+  // Show error.issues and let the user clear layout or move the paragraph.
+}
+```

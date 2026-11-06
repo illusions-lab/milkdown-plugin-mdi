@@ -29,3 +29,6 @@ The upstream MDI parser decides grammar validity, numeric limits, and canonical
 spelling. Invalid syntax remains literal text. Other unknown mdast extension
 nodes continue to fall back to editable literal Markdown so that one unknown
 construct does not prevent the document from loading.
+
+
+Paragraph layout is supported only on nonempty root-level paragraphs; quotes, lists, and nested containers do not support it. See [the 0.9.0 contract](./api.md#paragraph-layout-contract-0-9-0).
