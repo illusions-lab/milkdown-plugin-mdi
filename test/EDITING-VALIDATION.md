@@ -49,4 +49,4 @@ Real OS Japanese IME acceptance is **unverified**. Follow `JAPANESE-IME-CHECKLIS
 - Minimum-peer packed consumer: passed with all three browser engines.
 - Release artifact contract: 5 tests passed.
 - CI: extended randomized suite added to GitHub Actions; remote result pending.
-- Real Japanese IME: not executed. Current tools cannot control the macOS input source or drive native IME composition; see the per-browser manual checklist. Merge remains pending this acceptance requirement. No production release is part of this work.
+- Real Japanese IME: not executed. Current tools cannot control the macOS input source or drive native IME composition; see the per-browser manual checklist. The user subsequently authorized publishing 0.9.0 with this limitation recorded. Native IME acceptance remains outstanding; publication runs only through GitHub Actions.

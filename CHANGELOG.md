@@ -1,13 +1,12 @@
-## 0.9.0
+# Changelog
+
+## 0.9.0 - 2026-11-06
 
 - Breaking: reject paragraph layout that the MDI format cannot persist, including nested, conflicting, out-of-range and empty layout on export.
 - Add `inspectMdiDocument`, `guardMdiCommand`, and `MdiDocumentValidationError`.
 - Install a transaction filter by default; preserve legacy invalid state for explicit repair.
 - Keep #25 IME normalization changes separate from the #24 persistence contract.
 
-# Changelog
-
-## Unreleased
 
 - Preserve terminal empty paragraphs in multi-block documents with the existing explicit blank syntax, including immediate saves after composition; export leaves editor state and history untouched.
 - Add normal/prepared persistence regressions and remove the random-test exception for terminal empty paragraphs. Real Japanese IME acceptance remains unverified.
