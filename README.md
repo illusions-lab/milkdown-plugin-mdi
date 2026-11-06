@@ -182,3 +182,29 @@ Migrate saved ProseMirror JSON through the old schema's canonical MDI serializer
 before upgrading; canonical MDI documents need no migration. Exact proportional
 font balancing and native OS IME coverage are not claimed by synthetic browser
 tests.
+
+
+### 0.9.0 paragraph layout migration
+
+Layout is supported only on nonempty root-level paragraphs. `indent` accepts
+1–4294967295 and `bottom` accepts 0–4294967295; they are mutually exclusive.
+Use `guardMdiCommand(command)` around application quote/list commands for accurate
+query results. The default transaction filter also protects unwrapped commands,
+whose return values may still report success when their transaction is rejected.
+Use `inspectMdiDocument(doc)` to diagnose legacy JSON. Saving invalid layout throws
+`MdiDocumentValidationError` (`issues` contains codes and ProseMirror positions).
+Clear invalid layout or move paragraphs to the root before saving. Clipboard
+serialization helpers return `null` on failure. See [the API guide](./docs/api.md).
+
+
+```ts
+import { getMdi, MdiDocumentValidationError } from '@illusions-lab/milkdown-plugin-mdi'
+
+try {
+  const source = editor.action(getMdi())
+  // Persist source here.
+} catch (error) {
+  if (!(error instanceof MdiDocumentValidationError)) throw error
+  // Show error.issues and let the user clear layout or move the paragraph.
+}
+```

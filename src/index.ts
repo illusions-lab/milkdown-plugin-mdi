@@ -1,3 +1,5 @@
+import { Transform } from '@milkdown/prose/transform'
+import { allowsMdiTransaction, assertMdiDocument } from './layout-contract.js'
 import { createSlice, createTimer, type Ctx, type MilkdownPlugin } from '@milkdown/ctx'
 import remarkMdi from '@illusions-lab/mdi-remark'
 import {
@@ -5,13 +7,15 @@ import {
   editorStateTimerCtx,
   InitReady,
   ParserReady,
+  SerializerReady,
+  serializerCtx,
   remarkPluginsCtx,
   remarkStringifyOptionsCtx,
 } from '@milkdown/core'
 import { paragraphSchema } from '@milkdown/preset-commonmark'
 import { getMarkdown, $markSchema, $node } from '@milkdown/utils'
 import { $prose } from '@milkdown/utils'
-import { Plugin } from '@milkdown/prose/state'
+import { Plugin, PluginKey } from '@milkdown/prose/state'
 import type { MarkdownNode } from '@milkdown/transformer'
 import { mdastToMdiSource } from 'mdast-util-mdi'
 import { mdiRubyPresentation } from './ruby-presentation.js'
@@ -475,109 +479,164 @@ const parseMdiLayoutAttribute = (element: HTMLElement, name: string) => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const mdiParagraphSchema = paragraphSchema.extendSchema((previous) => (ctx) => {
-  const schema = previous(ctx)
-  return {
-    ...schema,
-    attrs: {
-      ...schema.attrs,
-      mdiIndent: mdiLayoutAttribute,
-      mdiBottom: mdiLayoutAttribute,
-      mdiBlank: { default: false },
-    },
-    parseDOM: [{
-      tag: 'div.mdi-blank[data-mdi-blank]',
-      priority: 70,
-      getAttrs: () => ({ mdiIndent: null, mdiBottom: null, mdiBlank: true }),
-    }, {
-      tag: 'p',
-      getAttrs: (dom) => {
-        const element = dom as HTMLElement
-        return {
-          mdiIndent: parseMdiLayoutAttribute(element, 'data-mdi-indent'),
-          mdiBottom: parseMdiLayoutAttribute(element, 'data-mdi-bottom'),
-          mdiBlank: element.hasAttribute('data-mdi-blank') && element.textContent === '',
+const mdiParagraphSchema: MilkdownPlugin = (ctx) => {
+  // Extend the existing registration in place. Registering a second paragraph
+  // node moves it behind heading, making heading the default block for Enter.
+  const previous = ctx.get(paragraphSchema.key)
+  ctx.set(paragraphSchema.key, (ctx) => {
+    const schema = previous(ctx)
+    return {
+      ...schema,
+      attrs: {
+        ...schema.attrs,
+        mdiIndent: mdiLayoutAttribute,
+        mdiBottom: mdiLayoutAttribute,
+        mdiBlank: { default: false },
+      },
+      parseDOM: [{
+        tag: 'div.mdi-blank[data-mdi-blank]',
+        priority: 70,
+        getAttrs: () => ({ mdiIndent: null, mdiBottom: null, mdiBlank: true }),
+      }, {
+        tag: 'p',
+        getAttrs: (dom) => {
+          const element = dom as HTMLElement
+          return {
+            mdiIndent: parseMdiLayoutAttribute(element, 'data-mdi-indent'),
+            mdiBottom: parseMdiLayoutAttribute(element, 'data-mdi-bottom'),
+            mdiBlank: element.hasAttribute('data-mdi-blank') && element.textContent === '',
+          }
+        },
+      }],
+      toDOM: (node) => {
+        const base = schema.toDOM?.(node) as unknown[] | undefined
+        const attributes: Record<string, unknown> = {
+          ...(base?.[1] && typeof base[1] === 'object' ? base[1] as Record<string, unknown> : {}),
         }
-      },
-    }],
-    toDOM: (node) => {
-      const base = schema.toDOM?.(node) as unknown[] | undefined
-      const attributes: Record<string, unknown> = {
-        ...(base?.[1] && typeof base[1] === 'object' ? base[1] as Record<string, unknown> : {}),
-      }
-      if (typeof node.attrs.mdiIndent === 'number') {
-        attributes.class = [attributes.class, 'mdi-indent'].filter(Boolean).join(' ')
-        attributes['data-mdi-indent'] = String(node.attrs.mdiIndent)
-        attributes.style = [attributes.style, `--mdi-indent: ${String(node.attrs.mdiIndent)}`]
-          .filter(Boolean).join('; ')
-      } else if (typeof node.attrs.mdiBottom === 'number') {
-        attributes.class = [attributes.class, 'mdi-bottom'].filter(Boolean).join(' ')
-        attributes['data-mdi-bottom'] = String(node.attrs.mdiBottom)
-        attributes.style = [attributes.style, `--mdi-bottom: ${String(node.attrs.mdiBottom)}`]
-          .filter(Boolean).join('; ')
-      }
-      if (node.attrs.mdiBlank === true && node.content.size === 0) {
-        attributes.class = [attributes.class, 'mdi-blank'].filter(Boolean).join(' ')
-        attributes['data-mdi-blank'] = ''
-      }
-      return ['p', attributes, 0]
-    },
-    parseMarkdown: {
-      match: (node) => node.type === 'paragraph' || node.type === 'mdiBlank',
-      runner: (state, node, type) => {
-        const data = node.data as Record<string, unknown> | undefined
-        state.openNode(type, {
-          mdiIndent: typeof data?.mdiIndent === 'number' ? data.mdiIndent : null,
-          mdiBottom: typeof data?.mdiBottom === 'number' ? data.mdiBottom : null,
-          mdiBlank: node.type === 'mdiBlank' || data?.mdiBlank === true,
-        })
-        if (node.children) state.next(node.children)
-        else if (typeof node.value === 'string' && node.value) state.addText(node.value)
-        state.closeNode()
-      },
-    },
-    toMarkdown: {
-      match: (node) => node.type.name === 'paragraph',
-      runner: (state, node) => {
-        if (node.content.size === 0 && node.attrs.mdiBlank === true) {
-          state.addNode('mdiBlank')
-          return
+        if (typeof node.attrs.mdiIndent === 'number') {
+          attributes.class = [attributes.class, 'mdi-indent'].filter(Boolean).join(' ')
+          attributes['data-mdi-indent'] = String(node.attrs.mdiIndent)
+          attributes.style = [attributes.style, `--mdi-indent: ${String(node.attrs.mdiIndent)}`]
+            .filter(Boolean).join('; ')
+        } else if (typeof node.attrs.mdiBottom === 'number') {
+          attributes.class = [attributes.class, 'mdi-bottom'].filter(Boolean).join(' ')
+          attributes['data-mdi-bottom'] = String(node.attrs.mdiBottom)
+          attributes.style = [attributes.style, `--mdi-bottom: ${String(node.attrs.mdiBottom)}`]
+            .filter(Boolean).join('; ')
         }
-        const data: Record<string, number> = {}
-        if (typeof node.attrs.mdiIndent === 'number') data.mdiIndent = node.attrs.mdiIndent
-        else if (typeof node.attrs.mdiBottom === 'number') data.mdiBottom = node.attrs.mdiBottom
-        state.openNode('paragraph', undefined, Object.keys(data).length > 0 ? { data } : undefined)
-        state.next(node.content)
-        state.closeNode()
+        if (node.attrs.mdiBlank === true && node.content.size === 0) {
+          attributes.class = [attributes.class, 'mdi-blank'].filter(Boolean).join(' ')
+          attributes['data-mdi-blank'] = ''
+        }
+        return ['p', attributes, 0]
       },
-    },
+      parseMarkdown: {
+        match: (node) => node.type === 'paragraph' || node.type === 'mdiBlank',
+        runner: (state, node, type) => {
+          const data = node.data as Record<string, unknown> | undefined
+          state.openNode(type, {
+            mdiIndent: typeof data?.mdiIndent === 'number' ? data.mdiIndent : null,
+            mdiBottom: typeof data?.mdiBottom === 'number' ? data.mdiBottom : null,
+            mdiBlank: node.type === 'mdiBlank' || data?.mdiBlank === true,
+          })
+          if (node.children) state.next(node.children)
+          else if (typeof node.value === 'string' && node.value) state.addText(node.value)
+          state.closeNode()
+        },
+      },
+      toMarkdown: {
+        match: (node) => node.type.name === 'paragraph',
+        runner: (state, node) => {
+          if (node.content.size === 0 && node.attrs.mdiBlank === true) {
+            state.addNode('mdiBlank')
+            return
+          }
+          const data: Record<string, number> = {}
+          if (typeof node.attrs.mdiIndent === 'number') data.mdiIndent = node.attrs.mdiIndent
+          else if (typeof node.attrs.mdiBottom === 'number') data.mdiBottom = node.attrs.mdiBottom
+          state.openNode('paragraph', undefined, Object.keys(data).length > 0 ? { data } : undefined)
+          state.next(node.content)
+          state.closeNode()
+        },
+      },
+    }
+  })
+  return () => () => {
+    if (ctx.isInjected(paragraphSchema.key)) ctx.set(paragraphSchema.key, previous)
   }
-})
+}
 
-const mdiBlankNormalization = $prose(
-  () => new Plugin({
+// Share editing/export rules without changing nested paragraphs or the initial empty document.
+const blankParagraphUpdates = (doc: import('@milkdown/prose/model').Node) => {
+  const updates: Array<{ pos: number; attrs: Record<string, unknown> }> = []
+  doc.forEach((node, pos) => {
+    if (node.type.name !== 'paragraph') return
+    const blank = node.content.size === 0
+      ? doc.childCount > 1 || node.attrs.mdiBlank === true
+      : false
+    if (node.attrs.mdiBlank !== blank) updates.push({ pos, attrs: { ...node.attrs, mdiBlank: blank } })
+  })
+  return updates
+}
+
+const mdiBlankNormalizationKey = new PluginKey('mdiBlankNormalization')
+
+const mdiBlankNormalization = $prose(() => {
+  let composing = false
+  let pending = false
+  let currentView: import('@milkdown/prose/view').EditorView | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const schedule = () => {
+    if (timer !== undefined || !currentView) return
+    timer = setTimeout(() => {
+      timer = undefined
+      if (!currentView || composing) return
+      if (currentView.composing) {
+        schedule()
+        return
+      }
+      pending = false
+      currentView.dispatch(currentView.state.tr
+        .setMeta(mdiBlankNormalizationKey, true)
+        .setMeta('addToHistory', false))
+    }, 20)
+  }
+  return new Plugin({
+    key: mdiBlankNormalizationKey,
+    props: {
+      handleDOMEvents: {
+        compositionstart: () => { composing = true; return false },
+        compositionend: () => { composing = false; pending = true; schedule(); return false },
+      },
+    },
+    view: (view) => {
+      currentView = view
+      return {
+        update: () => { if (pending && !composing) schedule() },
+        destroy: () => {
+          if (timer !== undefined) clearTimeout(timer)
+          currentView = undefined
+        },
+      }
+    },
     appendTransaction: (transactions, _oldState, state) => {
-      if (!transactions.some((transaction) => transaction.docChanged)) return null
-      const paragraph = state.schema.nodes.paragraph
-      if (!paragraph) return null
-      const updates: Array<{ pos: number; attrs: Record<string, unknown> }> = []
-      state.doc.forEach((node, pos, index) => {
-        if (node.type !== paragraph) return
-        if (node.attrs.mdiBlank === true && node.content.size > 0) {
-          updates.push({ pos, attrs: { ...node.attrs, mdiBlank: false } })
-          return
-        }
-        if (node.content.size === 0 && index < state.doc.childCount - 1 && node.attrs.mdiBlank !== true) {
-          updates.push({ pos, attrs: { ...node.attrs, mdiBlank: true } })
-        }
-      })
+      if (!transactions.some((transaction) => transaction.docChanged
+        || transaction.getMeta(mdiBlankNormalizationKey))) return null
+      // Attribute changes can replace the paragraph DOM and detach the IME's text node.
+      // The composition metadata also covers the final DOM flush after compositionend.
+      if (composing || currentView?.composing
+        || transactions.some((transaction) => transaction.getMeta('composition') !== undefined)) {
+        pending = true
+        return null
+      }
+      const updates = blankParagraphUpdates(state.doc)
       if (updates.length === 0) return null
       const tr = state.tr
-      for (const update of updates) tr.setNodeMarkup(update.pos, paragraph, update.attrs)
+      for (const update of updates) tr.setNodeMarkup(update.pos, undefined, update.attrs)
       return tr.setMeta('addToHistory', false)
     },
-  }),
-)
+  })
+})
 
 const createMdiRemarkPlugin = (initialDocument?: PreparedMdiDocument): MilkdownPlugin => (ctx) => {
   ctx.inject(mdiFrontmatterCtx)
@@ -627,6 +686,15 @@ const createMdiRemarkPlugin = (initialDocument?: PreparedMdiDocument): MilkdownP
       source: initialDocument.canonicalSource,
       document: initialDocument.document as MarkdownNode,
     } : undefined)
+    await ctx.wait(SerializerReady)
+    ctx.update(serializerCtx, serialize => doc => {
+      assertMdiDocument(doc)
+      const normalized = new Transform(doc)
+      for (const { pos, attrs } of blankParagraphUpdates(doc)) {
+        normalized.setNodeMarkup(pos, undefined, attrs)
+      }
+      return serialize(normalized.doc)
+    })
     ctx.done(mdiProvenanceReady)
     return () => {
       ctx.update(remarkPluginsCtx, (plugins) => plugins.filter((plugin) => plugin !== entry))
@@ -662,8 +730,9 @@ const mdiPlugins: MilkdownPlugin[] = [
   ...mdiKernSchema,
   mdiBreakSchema,
   mdiPagebreakSchema,
-  ...mdiParagraphSchema,
+  mdiParagraphSchema,
   mdiBlankNormalization,
+  $prose(() => new Plugin({ filterTransaction: (tr, state) => allowsMdiTransaction(tr, state.doc) })),
 ]
 
 interface MdiPluginOptions {
@@ -694,3 +763,6 @@ export * from './mapping.js'
 export * from './projection.js'
 export { prepareMdiDocument } from './prepared.js'
 export type { PreparedMdiDocument, StructuredCloneSafeMdast } from './prepared.js'
+
+export { inspectMdiDocument, guardMdiCommand, MdiDocumentValidationError } from './layout-contract.js'
+export type { MdiDocumentIssue, MdiDocumentIssueCode } from './layout-contract.js'

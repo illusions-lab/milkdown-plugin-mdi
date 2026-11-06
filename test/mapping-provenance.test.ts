@@ -1,4 +1,4 @@
-import { editorStateCtx, editorViewCtx, parserCtx, schemaCtx } from '@milkdown/core'
+import { editorStateCtx, editorViewCtx, parserCtx, schemaCtx, serializerCtx } from '@milkdown/core'
 import { history, redo, undo, undoDepth } from '@milkdown/prose/history'
 import { TextSelection } from '@milkdown/prose/state'
 import { $prose } from '@milkdown/utils'
@@ -179,7 +179,7 @@ describe('Rust-provenance editor mapping', () => {
     expect(quoteList.matches[0]!.from).toBeLessThan(listQuote.matches[0]!.from)
   })
 
-  it('maps canonical blocks while the live editor has a transient trailing paragraph', async () => {
+  it('maps canonical blocks while the live editor has a persistent trailing paragraph', async () => {
     const editor = await createEditor('first\n\nsecond')
     editor.action((ctx) => {
       const view = ctx.get(editorViewCtx)
@@ -188,7 +188,7 @@ describe('Rust-provenance editor mapping', () => {
     })
 
     const snapshot = editor.action(createMdiEditorMapping())
-    expect(snapshot.source).toBe('first\n\nsecond\n')
+    expect(snapshot.source).toBe('first\n\nsecond\n\n\\\n')
     expect(snapshot.doc.lastChild?.type.name).toBe('paragraph')
     expect(snapshot.doc.lastChild?.childCount).toBe(0)
 
@@ -198,6 +198,17 @@ describe('Rust-provenance editor mapping', () => {
       const match = result.matches[0]!
       expect(snapshot.doc.textBetween(match.from, match.to), value).toBe(value)
     }
+  })
+
+  it('maps source-backed blocks when a custom serializer omits a transient trailing paragraph', async () => {
+    const editor = await createEditor('stable')
+    editor.action(ctx => {
+      const view = ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.insert(view.state.doc.content.size, ctx.get(schemaCtx).nodes.paragraph!.create()))
+      ctx.set(serializerCtx, () => 'stable\n')
+    })
+    const snapshot = editor.action(createMdiEditorMapping())
+    expect(mapMdiSourceSpanToEditorRanges(snapshot, byteSpan(snapshot.source, 'stable')).matches).toHaveLength(1)
   })
 
   it('rejects reordered and structurally divergent editor documents instead of reassociating candidates', async () => {

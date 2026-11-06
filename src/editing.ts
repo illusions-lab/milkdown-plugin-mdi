@@ -1,3 +1,4 @@
+import { guardMdiCommand, validMdiLayoutValue } from './layout-contract.js'
 import { Fragment, type Node as ProseNode } from '@milkdown/prose/model'
 import { NodeSelection, TextSelection, type Command, type EditorState } from '@milkdown/prose/state'
 
@@ -290,9 +291,9 @@ const insertBlank: Command = (state, dispatch) => {
 const setParagraphLayout = (layout: 'indent' | 'bottom', value?: number): Command =>
   (state, dispatch) => {
     const target = paragraphPosition(state)
-    if (!target) return false
+    if (!target || state.doc.resolve(target.pos).depth !== 0 || !target.node.content.size) return false
     const normalized = layout === 'bottom' && value === undefined ? 0 : value
-    if (!Number.isInteger(normalized) || normalized! < (layout === 'bottom' ? 0 : 1)) return false
+    if (!validMdiLayoutValue(layout, normalized)) return false
     const attrs = {
       ...target.node.attrs,
       mdiIndent: layout === 'indent' ? normalized : null,
@@ -318,7 +319,7 @@ const clearParagraphLayout: Command = (state, dispatch) => {
 }
 
 /** Build a ProseMirror command without exposing private schema names or attrs. */
-export const mdiEditCommand = (operation: MdiEditOperation): Command => {
+const buildMdiEditCommand = (operation: MdiEditOperation): Command => {
   switch (operation.type) {
     case 'setRuby': return setRuby(operation.reading)
     case 'removeRuby': return removeRuby
@@ -333,6 +334,8 @@ export const mdiEditCommand = (operation: MdiEditOperation): Command => {
     case 'clearParagraphLayout': return clearParagraphLayout
   }
 }
+
+export const mdiEditCommand = (operation: MdiEditOperation): Command => guardMdiCommand(buildMdiEditCommand(operation))
 
 export const canApplyMdiEdit = (state: EditorState, operation: MdiEditOperation) =>
   mdiEditCommand(operation)(state)

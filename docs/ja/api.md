@@ -195,3 +195,29 @@ HTML comment text now disappears from publication output. Unterminated comments
 remain literal and may be exported, with `mdi.comment.unterminated` diagnostics.
 
 `@illusions-lab/milkdown-plugin-mdi/prepared` は Worker 対応の `hasCompatiblePreparedMdiDocumentVersions(value)` を公開します。キャッシュの再利用前に prepared・IR・provenance の全バージョンを確認し、非互換の場合は保持している元のソースから再生成してください。
+
+
+## 段落レイアウトの契約（0.9.0）
+
+レイアウトを設定できるのは、文書ルート直下の空でない段落だけです。
+`indent` は整数 1〜4294967295、`bottom` は整数 0〜4294967295 を受け付けます。
+0 は `[[bottom]]` として保存されます。両属性は同時に設定できません。
+引用、リスト、およびすべての入れ子コンテナでは利用できません。
+
+`inspectMdiDocument(doc)` は `{ code, pos }` の診断配列を返します。
+安定したコードは `layout-context`、`layout-conflict`、`layout-value`、`layout-empty` です。
+保存できないレイアウトがある場合、`getMdi()`、`getMarkdown()`、登録済み serializer は
+`issues` 配列を持つ `MdiDocumentValidationError` を投げます。
+クリップボードのヘルパーは従来どおり失敗時に `null` を返します。
+
+標準の単一 dispatch ProseMirror コマンドを `guardMdiCommand(command)` でラップすると、
+問い合わせ時と実行時の判定が一致します。MDI コマンドには組み込み済みです。
+ラップしていない外部コマンドは、既定のトランザクションフィルターが操作を拒否しても
+`true` を返す場合があります。
+
+移行時は、既存の不正な JSON も読み込み・診断できます。無関係な編集や修復は可能です。
+保存前に不正なレイアウトを解除するか、段落をルート直下へ移動してください。
+レイアウト付き段落の本文をすべて削除する操作は可能ですが、保存にはレイアウト解除が必要です。
+拒否された操作は dispatch されず、属性の自動削除も行いません。
+不正な状態を再導入する Undo も拒否されます。コンテナ内でレイアウト構文に似た文字列は、
+通常のテキストとして維持されます。

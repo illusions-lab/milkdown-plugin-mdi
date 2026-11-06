@@ -116,7 +116,7 @@ const browserSmoke = async () => {
 
 try {
   const registryVersion = process.env.REGISTRY_PLUGIN_VERSION
-  if (registryVersion && !/^0\.8\.\d+$/.test(registryVersion)) throw new Error('Invalid registry plugin version')
+  if (registryVersion && !/^0\.9\.\d+$/.test(registryVersion)) throw new Error('Invalid registry plugin version')
   if (!registryVersion) run('npm', ['run', 'build'], root)
   const tarball = registryVersion
     ? `@illusions-lab/milkdown-plugin-mdi@${registryVersion}`
