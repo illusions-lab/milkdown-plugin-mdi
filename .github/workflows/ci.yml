@@ -26,6 +26,7 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox webkit
       - run: node --test scripts/release-artifact.test.mjs
       - run: npm run typecheck
+      - run: npm run test:stateful:extended
       - run: npm run test:coverage
       - run: npm run build
       - run: npm run test:tarball
@@ -33,3 +34,12 @@ jobs:
       - run: npm run test:browser:all
       - run: PLAYWRIGHT_BROWSERS=all npm run test:consumer
       - run: npm run docs:build
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-evidence
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

@@ -60,7 +60,9 @@
     "debug:preview": "vite preview --config debug/vite.config.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "test:stateful:extended": "MDI_EXTENDED=1 vitest run test/stateful-editing.test.ts",
+    "test:stateful:replay": "vitest run test/stateful-editing.test.ts"
   },
   "devDependencies": {
     "@illusions-lab/milkdown-plugin-vertical-writing": "^1.0.1",

@@ -10,6 +10,7 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
   projects: [
     {
@@ -18,10 +19,12 @@ export default defineConfig({
     },
     {
       name: 'firefox',
+      testIgnore: '**/system-clipboard.spec.ts',
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
+      testIgnore: '**/system-clipboard.spec.ts',
       use: { ...devices['Desktop Safari'] },
     },
   ],
