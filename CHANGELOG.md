@@ -9,6 +9,13 @@
 
 ## Unreleased
 
+- Preserve terminal empty paragraphs in multi-block documents with the existing explicit blank syntax, including immediate saves after composition; export leaves editor state and history untouched.
+- Add normal/prepared persistence regressions and remove the random-test exception for terminal empty paragraphs. Real Japanese IME acceptance remains unverified.
+
+- Preserve the default paragraph schema order so Enter in body text creates a paragraph instead of a heading.
+
+- Defer blank-paragraph normalization during IME composition and finish it after composition ends without requiring another edit (#25).
+
 - Update `@illusions-lab/mdi` and `@illusions-lab/mdi-remark` to 2.1.2.
 
 ## 0.8.0 - Editorial comments
