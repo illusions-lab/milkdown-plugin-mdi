@@ -1,12 +1,13 @@
-import { editorViewCtx } from '@milkdown/core'
+import { editorViewCtx, serializerCtx } from '@milkdown/core'
 import { getMarkdown } from '@milkdown/utils'
-import { history, undo, redo } from '@milkdown/prose/history'
+import { history, undo, redo, undoDepth, redoDepth } from '@milkdown/prose/history'
 import { DOMParser, Slice, Fragment } from '@milkdown/prose/model'
 import { $prose } from '@milkdown/utils'
 import { wrapIn } from '@milkdown/prose/commands'
+import { wrapInList, sinkListItem, liftListItem } from '@milkdown/prose/schema-list'
 import { EditorState, TextSelection } from '@milkdown/prose/state'
 import { describe, expect, it, vi } from 'vitest'
-import { getMdi, guardMdiCommand, inspectMdiDocument, mdiEditCommand, MdiDocumentValidationError } from '../src/index'
+import { serializeMdiClipboard, getMdi, guardMdiCommand, inspectMdiDocument, mdiEditCommand, MdiDocumentValidationError } from '../src/index'
 import { allowsMdiTransaction, validMdiLayoutValue } from '../src/layout-contract'
 import { createEditor } from './harness'
 
@@ -119,7 +120,7 @@ describe('MDI paragraph persistence contract', () => {
       const view = ctx.get(editorViewCtx)
       const json = view.state.doc.toJSON()
       json.content[0].content[0].attrs.mdiIndent = 2
-      const doc = view.state.schema.nodeFromJSON(json)
+      const doc = uncheckedNode(view.state.schema, json)
       view.updateState(EditorState.create({ schema: view.state.schema, doc, plugins: view.state.plugins, selection: TextSelection.create(doc, 2) }))
       expect(inspectMdiDocument(doc)).toEqual([{ code: 'layout-context', pos: 1 }])
       expect(guardMdiCommand(wrapIn(view.state.schema.nodes.blockquote!))(view.state)).toBe(false)
@@ -191,3 +192,154 @@ describe('MDI paragraph persistence contract', () => {
     })
   })
 })
+
+const layouts = [
+  { type: 'setParagraphLayout', layout: 'indent', value: 2 },
+  { type: 'setParagraphLayout', layout: 'bottom' },
+  { type: 'setParagraphLayout', layout: 'bottom', value: 3 },
+] as const
+const semantic = (value: any): any => Array.isArray(value) ? value.map(semantic) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'span').map(([key, child]) => [key, semantic(child)])) : value
+const snapshot = (state: EditorState) => ({ doc: state.doc, selection: state.selection.toJSON(), marks: state.storedMarks,
+  history: state.plugins.map(plugin => plugin.getState(state)), undo: undoDepth(state), redo: redoDepth(state) })
+const seedHistory = (view: import('@milkdown/prose/view').EditorView) => {
+  view.dispatch(view.state.tr.insertText('a'))
+  view.dispatch(view.state.tr.insertText('b'))
+  expect(undo(view.state, view.dispatch)).toBe(true)
+  view.dispatch(view.state.tr.setStoredMarks([view.state.schema.marks.strong!.create()]))
+  expect(undoDepth(view.state)).toBeGreaterThan(0)
+  expect(redoDepth(view.state)).toBeGreaterThan(0)
+}
+describe('#24 complete entry and refusal matrix', () => {
+  for (const source of ['text', '> text', '1. text', '- text', '> - text', '- > text', '- outer\n  1. inner']) {
+    for (const operation of layouts) it(`support matrix ${source} ${JSON.stringify(operation)}`, async () => {
+      const editor = await createEditor(source, [$prose(() => history({ newGroupDelay: -1 }))])
+      editor.action(ctx => {
+        const view = ctx.get(editorViewCtx)
+        seedHistory(view)
+        let pos = 0
+        view.state.doc.descendants((node, at) => { if (node.type.name === 'paragraph') pos = at })
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos + 1)).setStoredMarks([view.state.schema.marks.strong!.create()]))
+        const before = view.state, saved = snapshot(before), dispatch = vi.fn(view.dispatch)
+        const command = mdiEditCommand(operation), allowed = source === 'text'
+        expect(command(before)).toBe(allowed)
+        expect(command(before, dispatch)).toBe(allowed)
+        expect(dispatch).toHaveBeenCalledTimes(allowed ? 1 : 0)
+        if (!allowed) { expect(view.state).toBe(before); expect(snapshot(view.state)).toEqual(saved) }
+      })
+    })
+  }
+  for (const layout of ['indent', 'bottom'] as const) for (const value of [-1, 1.5, NaN, Infinity, 4294967296, ...(layout === 'indent' ? [0] : [])]) {
+    it(`invalid ${layout} ${value} preserves populated state`, async () => {
+      const editor = await createEditor('text', [$prose(() => history({ newGroupDelay: -1 }))])
+      editor.action(ctx => {
+        const view = ctx.get(editorViewCtx); seedHistory(view)
+        const before = view.state, saved = snapshot(before), dispatch = vi.fn()
+        const command = mdiEditCommand({ type: 'setParagraphLayout', layout, value })
+        expect(command(before)).toBe(false); expect(command(before, dispatch)).toBe(false)
+        expect(dispatch).not.toHaveBeenCalled(); expect(snapshot(view.state)).toEqual(saved)
+      })
+    })
+  }
+  for (const operation of layouts) it(`empty refusal ${JSON.stringify(operation)}`, async () => {
+    const editor = await createEditor('text\n\nother', [$prose(() => history({ newGroupDelay: -1 }))])
+    editor.action(ctx => {
+      const view = ctx.get(editorViewCtx); seedHistory(view)
+      view.dispatch(view.state.tr.insert(view.state.doc.content.size, view.state.schema.nodes.paragraph!.create()).setMeta('addToHistory', false))
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)).setStoredMarks([view.state.schema.marks.strong!.create()]))
+      const before = view.state, saved = snapshot(before), dispatch = vi.fn()
+      const command = mdiEditCommand(operation)
+      expect(command(before)).toBe(false); expect(command(before, dispatch)).toBe(false)
+      expect(dispatch).not.toHaveBeenCalled(); expect(snapshot(view.state)).toEqual(saved)
+    })
+  })
+  for (const operation of layouts) it(`three reloads after lifecycle ${JSON.stringify(operation)}`, async () => {
+    let editor = await createEditor('**marked** text\n\n> quote\n\n- list', [$prose(() => history({ newGroupDelay: -1 }))])
+    for (const action of [operation, { ...operation, value: 4 }, ...layouts, { type: 'clearParagraphLayout' }] as const) {
+      let source = '', expected: any
+      editor.action(ctx => {
+        const view = ctx.get(editorViewCtx), before = view.state.doc
+        expect(mdiEditCommand(action)(view.state, view.dispatch)).toBe(true)
+        expected = semantic(view.state.doc.toJSON()); source = getMdi()(ctx)
+        expect(undo(view.state, view.dispatch)).toBe(true); expect(view.state.doc.eq(before)).toBe(true)
+        expect(redo(view.state, view.dispatch)).toBe(true); expect(semantic(view.state.doc.toJSON())).toEqual(expected)
+      })
+      for (let round = 0; round < 3; round++) {
+        editor = await createEditor(source, [$prose(() => history({ newGroupDelay: -1 }))])
+        editor.action(ctx => { expect(semantic(ctx.get(editorViewCtx).state.doc.toJSON())).toEqual(expected); source = getMdi()(ctx) })
+      }
+    }
+  })
+  for (const container of ['blockquote', 'bullet_list', 'ordered_list']) it(`wrap refusal ${container}`, async () => {
+    const editor = await createEditor('text', [$prose(() => history({ newGroupDelay: -1 }))])
+    editor.action(ctx => {
+      const view = ctx.get(editorViewCtx)
+      mdiEditCommand(layouts[0])(view.state, view.dispatch)
+      seedHistory(view)
+      const before = view.state, saved = snapshot(before)
+      const command = container === 'blockquote' ? wrapIn(before.schema.nodes[container]!) : wrapInList(before.schema.nodes[container]!)
+      const dispatch = vi.fn(view.dispatch)
+      expect(guardMdiCommand(command)(before)).toBe(false)
+      expect(guardMdiCommand(command)(before, dispatch)).toBe(false); expect(dispatch).not.toHaveBeenCalled()
+      expect(command(before, dispatch)).toBe(true); expect(dispatch).toHaveBeenCalledTimes(1)
+      expect(view.state).toBe(before); expect(snapshot(view.state)).toEqual(saved)
+    })
+  })
+  it('legacy diagnostics migrate and sequential repairs permit save but cannot be undone', async () => {
+    const editor = await createEditor('lead\n\n> quote\n\n- one\n- two', [$prose(() => history({ newGroupDelay: -1 }))])
+    let source = '', expected: unknown
+    editor.action(ctx => {
+      const view = ctx.get(editorViewCtx), original = view.state
+      const json = original.doc.toJSON()
+      json.content[1].content[0].attrs.mdiIndent = 2
+      json.content[2].content[0].content[0].attrs.mdiBottom = 0
+      const doc = uncheckedNode(original.schema, json)
+      view.updateState(EditorState.create({ schema: original.schema, doc, plugins: original.plugins }))
+      const issues = inspectMdiDocument(doc)
+      expect(issues).toHaveLength(2)
+      view.dispatch(view.state.tr.insertText('prefix', 1))
+      expect(inspectMdiDocument(view.state.doc)).toEqual(issues.map(issue => ({ ...issue, pos: issue.pos + 6 })))
+      const before = view.state
+      for (const serialize of [() => ctx.get(serializerCtx)(view.state.doc), () => getMdi()(ctx), () => getMarkdown()(ctx)]) {
+        try { serialize(); throw new Error('expected validation') } catch (error) { expect(error).toBeInstanceOf(MdiDocumentValidationError); expect((error as MdiDocumentValidationError).issues).toEqual(inspectMdiDocument(view.state.doc)) }
+      }
+      expect(serializeMdiClipboard(new Slice(view.state.doc.content, 0, 0))(ctx)).toBeNull()
+      expect(view.state).toBe(before)
+      let issue = inspectMdiDocument(view.state.doc)[0]!
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, issue.pos + 1)))
+      mdiEditCommand({ type: 'clearParagraphLayout' })(view.state, view.dispatch)
+      expect(() => getMdi()(ctx)).toThrow(MdiDocumentValidationError)
+      issue = inspectMdiDocument(view.state.doc)[0]!
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, issue.pos + 1)))
+      expect(liftListItem(view.state.schema.nodes.list_item!)(view.state, view.dispatch)).toBe(true)
+      expect(inspectMdiDocument(view.state.doc)).toEqual([])
+      const repaired = view.state.doc
+      undo(view.state, view.dispatch); expect(view.state.doc.eq(repaired)).toBe(true)
+      source = getMdi()(ctx); expected = semantic(view.state.doc.toJSON())
+    })
+    const loaded = await createEditor(source)
+    loaded.action(ctx => expect(semantic(ctx.get(editorViewCtx).state.doc.toJSON())).toEqual(expected))
+  })
+  it('ordinary list sink works while deeper legacy layout is refused and neighbours remain editable', async () => {
+    const editor = await createEditor('- first\n- second\n- third')
+    editor.action(ctx => {
+      const view = ctx.get(editorViewCtx)
+      const positions: number[] = []; view.state.doc.descendants((node, pos) => { if (node.type.name === 'paragraph') positions.push(pos) })
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, positions[1]! + 1)))
+      const sink = sinkListItem(view.state.schema.nodes.list_item!)
+      expect(sink(view.state, view.dispatch)).toBe(true)
+      const json = view.state.doc.toJSON()
+      json.content[0].content[1].content[0].attrs.mdiIndent = 2
+      const doc = uncheckedNode(view.state.schema, json)
+      let target = 0; doc.descendants((node, pos) => { if (node.attrs.mdiIndent === 2) target = pos })
+      view.updateState(EditorState.create({ schema: view.state.schema, plugins: view.state.plugins, doc, selection: TextSelection.create(doc, target + 1) }))
+      const before = view.state
+      expect(sink(before, view.dispatch)).toBe(true); expect(view.state).toBe(before)
+      view.dispatch(view.state.tr.insertText('editable', 3)); expect(view.state.doc.textContent).toContain('editable')
+    })
+  })
+})
+
+// Rebuild a legacy tree without JSON attribute validation: CommonMark list
+// parsing can retain string spread attributes on existing list items.
+const uncheckedNode = (schema: import('@milkdown/prose/model').Schema, json: any): import('@milkdown/prose/model').Node => json.type === 'text' ? schema.text(json.text, json.marks?.map((mark: any) => schema.markFromJSON(mark))) : schema.nodes[json.type]!.create(json.attrs, json.content?.map((child: any) => uncheckedNode(schema, child)))
